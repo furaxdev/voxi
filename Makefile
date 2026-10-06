@@ -13,7 +13,7 @@ CFLAGS = -std=gnu11 -ffreestanding -fno-builtin -fno-stack-protector \
 LDFLAGS = -n -T $(BOOT_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 
 C_SRCS := $(shell find $(KERNEL_DIR) -name '*.c')
-S_SRCS := $(BOOT_DIR)/boot.S $(KERNEL_DIR)/arch/x86_64/isr.S
+S_SRCS := $(BOOT_DIR)/boot.S $(KERNEL_DIR)/arch/x86_64/isr.S $(KERNEL_DIR)/arch/x86_64/switch.S
 
 C_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SRCS))
 S_OBJS := $(patsubst %.S,$(BUILD_DIR)/%.o,$(S_SRCS))

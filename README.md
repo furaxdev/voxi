@@ -20,6 +20,14 @@ shell — all written from the ground up with no borrowed kernel code.
   demand.
 - **Shell** (`kernel/shell.c`): a tiny interactive shell — `help`, `clear`,
   `echo`, `meminfo`, `uptime`, `about`, `reboot`, `halt`.
+- **Multitasking** (`kernel/task.c`, `kernel/scheduler.c`,
+  `kernel/arch/x86_64/switch.S`): cooperative kernel tasks, each with its
+  own stack. `switch_to()` swaps the callee-saved registers and `rsp`
+  between tasks; `yield()` round-robins to the next ready one. A task
+  calls `yield()` itself to let others run (there's no timer-driven
+  preemption yet — see "what's next"). `kernel_main` spawns three demo
+  tasks that interleave their output before the shell starts, proving the
+  context switch actually works.
 
 ## Building and running
 
@@ -46,8 +54,11 @@ they'd unlock:
 
 1. **Virtual memory manager**: only identity-mapped 1 GiB exists right now;
    add a real `map_page`/`unmap_page` and go higher-half.
-2. **Multitasking**: a scheduler, task structs, context switching (the IDT
-   and timer tick are already there to drive it).
+2. **Preemptive scheduling**: multitasking today is cooperative only
+   (tasks must call `yield()`). Driving `schedule()` from the PIT IRQ needs
+   care around `RFLAGS.IF` and PIC EOI ordering during a mid-interrupt
+   stack switch — doable, just needs to be done correctly to avoid
+   deadlocking the timer.
 3. **User mode**: TSS, ring 3, syscalls (`int 0x80` or `syscall`), separate
    kernel/user address spaces.
 4. **Filesystem**: a VFS layer, then something concrete (initrd, FAT, or a

@@ -9,9 +9,29 @@
 #include "mm/pmm.h"
 #include "mm/heap.h"
 #include "lib/kprintf.h"
+#include "scheduler.h"
 #include "shell.h"
 
 extern uint8_t kernel_end[];
+
+static void demo_task(void *arg) {
+    const char *name = (const char *)arg;
+    for (int i = 1; i <= 3; i++) {
+        kprintf("[task %s] iteration %d\n", name, i);
+        yield();
+    }
+}
+
+static void run_multitasking_demo(void) {
+    scheduler_init();
+    scheduler_spawn(demo_task, (void *)"A");
+    scheduler_spawn(demo_task, (void *)"B");
+    scheduler_spawn(demo_task, (void *)"C");
+
+    kprintf("[sched] 3 cooperative tasks spawned, running them to completion...\n");
+    while (!scheduler_all_done()) yield();
+    kprintf("[sched] all demo tasks finished\n");
+}
 
 void kernel_main(uint64_t multiboot_addr) {
     vga_init();
@@ -33,6 +53,8 @@ void kernel_main(uint64_t multiboot_addr) {
 
     __asm__ volatile ("sti");
     kprintf("[irq]  interrupts enabled (timer @ %dHz, keyboard)\n", PIT_HZ);
+
+    run_multitasking_demo();
 
     shell_run();
 

@@ -1,6 +1,7 @@
 #include "pit.h"
 #include <voxi/io.h>
 #include "../arch/x86_64/idt.h"
+#include "../scheduler.h"
 
 #define PIT_CHANNEL0 0x40
 #define PIT_COMMAND  0x43
@@ -11,6 +12,7 @@ static volatile uint64_t ticks = 0;
 static void pit_handler(registers_t *regs) {
     (void)regs;
     ticks++;
+    if (scheduler_started()) scheduler_switch();
 }
 
 void pit_init(uint32_t frequency_hz) {

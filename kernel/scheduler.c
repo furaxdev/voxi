@@ -1,14 +1,30 @@
 #include "scheduler.h"
 #include "lib/kprintf.h"
+#include "arch/x86_64/gdt.h"
 
 extern void switch_to(uint64_t *old_rsp_store, uint64_t new_rsp);
 
 static task_t *current = NULL;
 static int next_id = 1;
+static bool started = false;
+static uint8_t main_task_rsp0_stack[4096];
+
+static void set_rsp0_for(task_t *t) {
+    uint64_t top = t->kstack
+        ? (uint64_t)(t->kstack + TASK_KSTACK_SIZE)
+        : (uint64_t)(main_task_rsp0_stack + sizeof(main_task_rsp0_stack));
+    tss_set_rsp0(top);
+}
 
 void scheduler_init(void) {
     current = task_wrap_current(0);
     current->next = current; /* circular list of one */
+    set_rsp0_for(current);
+    started = true;
+}
+
+bool scheduler_started(void) {
+    return started;
 }
 
 task_t *scheduler_spawn(void (*entry)(void *), void *arg) {
@@ -21,21 +37,27 @@ task_t *scheduler_spawn(void (*entry)(void *), void *arg) {
     return t;
 }
 
-void yield(void) {
-    if (!current) return;
+static task_t *pick_next(void) {
+    task_t *next = current->next;
+    while (next->state == TASK_DEAD && next != current) next = next->next;
+    return next;
+}
 
+void scheduler_switch(void) {
     task_t *prev = current;
-    task_t *next = prev->next;
-
-    /* find the next non-dead task; if none, just return to ourselves */
-    while (next->state == TASK_DEAD && next != prev) next = next->next;
-    if (next == prev) return;
+    task_t *next = pick_next();
 
     if (prev->state != TASK_DEAD) prev->state = TASK_READY;
-    next->state = TASK_RUNNING;
     current = next;
+    current->state = TASK_RUNNING;
+    set_rsp0_for(current);
 
-    switch_to(&prev->rsp, next->rsp);
+    switch_to(&prev->rsp, current->rsp);
+}
+
+void scheduler_kill_current_and_switch(void) {
+    current->state = TASK_DEAD;
+    scheduler_switch(); /* never resumes this task again */
 }
 
 bool scheduler_all_done(void) {

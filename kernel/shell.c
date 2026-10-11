@@ -7,6 +7,7 @@
 #include "drivers/pit.h"
 #include "mm/pmm.h"
 #include "mm/heap.h"
+#include "heartbeat.h"
 
 #define LINE_MAX 128
 
@@ -38,6 +39,7 @@ static void cmd_help(void) {
     kprintf("  meminfo   show physical memory and heap stats\n");
     kprintf("  uptime    show ticks since boot\n");
     kprintf("  about     show kernel info\n");
+    kprintf("  heartbeat show the background preemption counter (proves preemptive scheduling)\n");
     kprintf("  reboot    reboot the machine\n");
     kprintf("  halt      stop the CPU\n");
 }
@@ -100,6 +102,9 @@ void shell_run(void) {
             cmd_uptime();
         } else if (strcmp(line, "about") == 0) {
             cmd_about();
+        } else if (strcmp(line, "heartbeat") == 0) {
+            kprintf("heartbeat counter: %lu (climbing in the background while you type)\n",
+                    (unsigned long)heartbeat_count());
         } else if (strcmp(line, "reboot") == 0) {
             kprintf("Rebooting...\n");
             reboot();

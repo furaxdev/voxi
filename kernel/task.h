@@ -13,7 +13,7 @@ typedef enum {
 
 typedef struct task {
     uint64_t rsp;           /* saved stack pointer when not running */
-    uint8_t *kstack;        /* base of this task's kernel stack (for freeing) */
+    uint8_t *kstack;        /* base of this task's kernel stack, or NULL for the boot thread */
     void (*entry)(void *);
     void *arg;
     int id;

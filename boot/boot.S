@@ -56,15 +56,16 @@ _start:
     xor eax, eax
     rep stosd
 
-    /* pml4[0] -> pdpt, present+writable */
+    /* pml4[0] -> pdpt, present+writable+user (U/S must be set at every
+     * level of the walk for a page to be user-accessible) */
     lea eax, [pdpt]
-    or eax, 0x3
+    or eax, 0x7
     lea edi, [pml4]
     mov [edi], eax
 
-    /* pdpt[0] -> pd, present+writable */
+    /* pdpt[0] -> pd, present+writable+user */
     lea eax, [pd]
-    or eax, 0x3
+    or eax, 0x7
     lea edi, [pdpt]
     mov [edi], eax
 
@@ -74,7 +75,7 @@ _start:
 fill_pd:
     mov edx, ecx
     shl edx, 21
-    or edx, 0x83          /* present + writable + huge(PS) */
+    or edx, 0x87          /* present + writable + user-accessible + huge(PS) */
     mov [edi], edx
     mov dword ptr [edi+4], 0
     add edi, 8

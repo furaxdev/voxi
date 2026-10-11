@@ -6,10 +6,13 @@
 #include "drivers/keyboard.h"
 #include "arch/x86_64/idt.h"
 #include "arch/x86_64/pic.h"
+#include "arch/x86_64/gdt.h"
 #include "mm/pmm.h"
 #include "mm/heap.h"
 #include "lib/kprintf.h"
 #include "scheduler.h"
+#include "syscall.h"
+#include "heartbeat.h"
 #include "shell.h"
 
 extern uint8_t kernel_end[];
@@ -41,9 +44,13 @@ void kernel_main(uint64_t multiboot_addr) {
     kprintf("Voxi kernel starting...\n");
     vga_set_color(VGA_LGRAY, VGA_BLACK);
 
+    gdt_init();
+    kprintf("[gdt]  GDT + TSS loaded (kernel/user segments ready)\n");
+
     idt_init();
     pic_remap();
-    kprintf("[idt]  interrupt table loaded\n");
+    syscall_init();
+    kprintf("[idt]  interrupt table loaded (incl. yield + syscall gates)\n");
 
     pmm_init(multiboot_addr, (uint64_t)kernel_end);
     heap_init(1024); /* 4 MiB initial heap */
@@ -55,6 +62,11 @@ void kernel_main(uint64_t multiboot_addr) {
     kprintf("[irq]  interrupts enabled (timer @ %dHz, keyboard)\n", PIT_HZ);
 
     run_multitasking_demo();
+
+    kprintf("[sched] spawning a usermode (ring3) demo task...\n");
+    scheduler_spawn(usermode_demo_entry, NULL);
+    kprintf("[sched] spawning a background heartbeat task (no voluntary yield -- pure timer preemption)...\n");
+    heartbeat_start();
 
     shell_run();
 

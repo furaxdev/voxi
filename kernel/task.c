@@ -1,13 +1,12 @@
 #include "task.h"
 #include "mm/heap.h"
-#include "lib/kprintf.h"
 #include "scheduler.h"
 
 void task_trampoline(void) {
     task_t *self = scheduler_current();
     self->entry(self->arg);
     self->state = TASK_DEAD;
-    for (;;) yield(); /* never resumed again once dead, but just in case */
+    for (;;) yield(); /* never actually resumed again once dead */
 }
 
 task_t *task_create(void (*entry)(void *), void *arg, int id) {

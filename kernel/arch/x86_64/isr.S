@@ -74,6 +74,9 @@ IRQ 13, 45
 IRQ 14, 46
 IRQ 15, 47
 
+/* vector 128 (0x80): syscall gate, callable from ring3 */
+ISR_NOERR 128
+
 .global isr_common_stub
 isr_common_stub:
     push r15

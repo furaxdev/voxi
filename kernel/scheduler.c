@@ -8,6 +8,7 @@ static task_t *current = NULL;
 static int next_id = 1;
 static bool started = false;
 static uint64_t kill_count = 0;
+static uint64_t exit_count = 0;
 static uint64_t switch_count = 0;
 static uint8_t main_task_rsp0_stack[4096];
 
@@ -64,6 +65,14 @@ void scheduler_switch(void) {
     current->state = TASK_RUNNING;
     set_rsp0_for(current);
 
+    /* Switch address spaces if this task has its own (a process); kernel
+     * code is mapped identically in every address space (see vmm.c), so
+     * this is safe to do from here regardless of which one was active a
+     * moment ago. */
+    if (current->cr3 != prev->cr3) {
+        __asm__ volatile ("mov %0, %%cr3" :: "r"(current->cr3) : "memory");
+    }
+
     switch_to(&prev->rsp, current->rsp);
 }
 
@@ -73,8 +82,18 @@ void scheduler_kill_current_and_switch(void) {
     scheduler_switch(); /* never resumes this task again */
 }
 
+void scheduler_exit_current_and_switch(void) {
+    current->state = TASK_DEAD;
+    exit_count++;
+    scheduler_switch(); /* never resumes this task again */
+}
+
 uint64_t scheduler_kill_count(void) {
     return kill_count;
+}
+
+uint64_t scheduler_exit_count(void) {
+    return exit_count;
 }
 
 uint64_t scheduler_switch_count(void) {

@@ -12,9 +12,13 @@ CFLAGS = -std=gnu11 -ffreestanding -fno-builtin -fno-stack-protector \
          -g -O2 -MMD -MP
 LDFLAGS = -n -T $(BOOT_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 
+USERLAND_DIR = userland
+USER_ELF = $(BUILD_DIR)/userland/hello.elf
+
 C_SRCS := $(shell find $(KERNEL_DIR) -name '*.c')
 S_SRCS := $(BOOT_DIR)/boot.S $(KERNEL_DIR)/arch/x86_64/isr.S \
-          $(KERNEL_DIR)/arch/x86_64/context.S $(KERNEL_DIR)/arch/x86_64/usermode.S
+          $(KERNEL_DIR)/arch/x86_64/context.S $(KERNEL_DIR)/arch/x86_64/usermode.S \
+          $(KERNEL_DIR)/fs/ramfs_data.S
 
 C_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SRCS))
 S_OBJS := $(patsubst %.S,$(BUILD_DIR)/%.o,$(S_SRCS))
@@ -43,6 +47,19 @@ $(BUILD_DIR)/%.o: %.c $(SLOC_HDR)
 $(BUILD_DIR)/%.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+# The ramfs's one embedded file: a tiny standalone ELF64 binary, built
+# with its own freestanding toolchain invocation (no kernel CFLAGS --
+# it's not part of the kernel image, just data baked into it).
+$(BUILD_DIR)/userland/%.o: $(USERLAND_DIR)/%.S
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -ffreestanding -c $< -o $@
+
+$(USER_ELF): $(BUILD_DIR)/userland/hello.o $(USERLAND_DIR)/linker.ld
+	$(LD) -n -T $(USERLAND_DIR)/linker.ld -o $@ $(BUILD_DIR)/userland/hello.o
+
+# ramfs_data.S .incbin's the path above, so it must exist first.
+$(BUILD_DIR)/$(KERNEL_DIR)/fs/ramfs_data.o: $(USER_ELF)
 
 $(KERNEL_BIN): $(OBJS) $(BOOT_DIR)/linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)

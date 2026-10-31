@@ -1,5 +1,6 @@
 #include "task.h"
 #include "mm/heap.h"
+#include "mm/vmm.h"
 #include "scheduler.h"
 
 void task_trampoline(void) {
@@ -24,6 +25,7 @@ task_t *task_create(void (*entry)(void *), void *arg, int id) {
     t->id = id;
     t->state = TASK_READY;
     t->next = NULL;
+    t->cr3 = vmm_kernel_cr3();
 
     /* Build an initial stack frame matching what switch_to() expects to
      * pop (r15,r14,r13,r12,rbx,rbp) followed by a return address. Since a
@@ -52,5 +54,6 @@ task_t *task_wrap_current(int id) {
     t->state = TASK_RUNNING;
     t->next = NULL;
     t->rsp = 0; /* filled in by switch_to() on the first switch away */
+    t->cr3 = vmm_kernel_cr3();
     return t;
 }

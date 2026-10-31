@@ -9,6 +9,7 @@
 #include "arch/x86_64/gdt.h"
 #include "mm/pmm.h"
 #include "mm/heap.h"
+#include "mm/vmm.h"
 #include "lib/kprintf.h"
 #include "scheduler.h"
 #include "syscall.h"
@@ -50,6 +51,9 @@ void kernel_main(uint64_t multiboot_addr) {
 
     gdt_init();
     kprintf("[gdt]  GDT + TSS loaded (kernel/user segments ready)\n");
+
+    vmm_init();
+    kprintf("[vmm]  kernel address space captured (per-process spaces ready)\n");
 
     idt_init();
     pic_remap();

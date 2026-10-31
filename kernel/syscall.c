@@ -15,7 +15,7 @@ static void syscall_handler(registers_t *regs) {
             break;
         case SYS_EXIT:
             kprintf("[kernel] task %d exited via syscall\n", scheduler_current()->id);
-            scheduler_kill_current_and_switch(); /* never returns */
+            scheduler_exit_current_and_switch(); /* never returns */
             break;
         default:
             kprintf("[kernel] unknown syscall %lu from task %d\n",

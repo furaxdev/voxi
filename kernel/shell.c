@@ -17,6 +17,8 @@
 #include "lib/tsc.h"
 #include "generated_sloc.h"
 #include "drivers/rtc.h"
+#include "process.h"
+#include "fs/ramfs.h"
 
 #define LINE_MAX 128
 
@@ -77,6 +79,8 @@ static void cmd_help(void) {
     kprintf("  uname              one-line system summary\n");
     kprintf("  t N | CMD          run CMD after N seconds, in the background\n");
     kprintf("  t -h HH:MM:SS | CMD  same, at that time of day (RTC-based)\n");
+    kprintf("  ls                 list files in the ramfs\n");
+    kprintf("  run NAME           load+run a ramfs ELF binary as a real isolated process\n");
     kprintf("  reboot             reboot the machine\n");
     kprintf("  halt               stop the CPU\n");
 }
@@ -256,6 +260,8 @@ static void execute_line(char *line) {
         } else if (strcmp(cmd, "killcount") == 0) {
             kprintf("tasks killed by hardware faults: %lu\n",
                     (unsigned long)scheduler_kill_count());
+            kprintf("tasks that exited cleanly (SYS_EXIT): %lu\n",
+                    (unsigned long)scheduler_exit_count());
         } else if (strcmp(cmd, "lastfault") == 0) {
             lastfault_print();
         } else if (strcmp(cmd, "crashtest") == 0) {
@@ -304,6 +310,11 @@ static void execute_line(char *line) {
             cmd_uname();
         } else if (strcmp(cmd, "t") == 0) {
             cmd_t(cursor);
+        } else if (strcmp(cmd, "ls") == 0) {
+            ramfs_list();
+        } else if (strcmp(cmd, "run") == 0) {
+            char *name = next_token(&cursor);
+            if (name) process_spawn(name); else kprintf("usage: run NAME\n");
         } else if (strcmp(cmd, "reboot") == 0) {
             kprintf("Rebooting...\n");
             reboot();

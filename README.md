@@ -144,24 +144,86 @@ For a headless box:
 qemu-system-x86_64 -cdrom build/voxi.iso -serial stdio -display none -m 512M
 ```
 
+## Running a separate program: `run hello`
+
+`run hello` loads `hello` — a tiny standalone ELF64 binary
+(`userland/hello.S`, baked into the kernel image at build time via
+`kernel/fs/ramfs_data.S`, since there's no disk driver yet to read it
+from a real filesystem) — and runs it as a genuinely isolated process:
+
+- `kernel/mm/vmm.c` builds it a private address space: a fresh `PML4`
+  whose entry 0 reuses the kernel's own shared 0-1GiB mapping (so
+  syscalls, the IDT, drivers all keep working no matter whose `CR3` is
+  loaded), and whose entry 1 is a *private* 2MiB window at `0x40000000`
+  that belongs to no one else.
+- `kernel/elf.c` parses its `PT_LOAD` segments and copies them into
+  fresh physical frames mapped only in that process's own page tables.
+- The scheduler reloads `CR3` on every switch to match whichever
+  task is about to run (`kernel/scheduler.c`), so two processes run
+  side by side without either one able to see the other's memory.
+- It still enters ring 3 through the same `enter_usermode()` as the
+  boot-time demo, and talks to the kernel through the same `int 0x80`.
+
+Run `ls` to see what's in the ramfs, `run hello` to load and run it,
+and `tasks` / `killcount` afterward to watch it show up, run, and exit
+cleanly through `SYS_EXIT` (separately counted from hardware-fault
+kills — `killcount` reports both now).
+
+### Can it run bash or zsh?
+
+No, and this is worth being direct about rather than letting the
+question hang: not the real binaries, and not even their source code
+without a project-sized amount of additional work. What's above is the
+*prerequisite architecture* — isolated address spaces, a real ELF
+loader, a process that's a separate file instead of a C function
+compiled into the kernel — not a shortcut past what bash/zsh actually
+need:
+
+- A real filesystem on real storage (there's a ramfs with one
+  hand-written demo file; there's no disk driver, no directory
+  structure, nothing resembling `/bin` or `/etc`).
+- A libc. Bash and zsh are written against glibc or a similar POSIX
+  libc — `malloc`, `printf`, `readline`, locale support, all of it.
+  Voxi has two real syscalls (`SYS_WRITE`, `SYS_EXIT`) plus a `SYS_NOP`
+  for benchmarking. Getting from there to "enough of POSIX that bash
+  compiles" is a libc port in its own right.
+- `fork()`/`execve()`/`wait()`, pipes, signals — bash's entire reason
+  for existing is managing other processes; Voxi can load and run
+  exactly one kind of thing, once, with no parent/child relationship
+  at all yet.
+- A tty layer with `termios`, job control, and the line discipline
+  readline expects. Voxi's "terminal" is a VGA text buffer and a
+  keyboard IRQ; there's no pty, no `SIGWINCH`, nothing a real shell's
+  interactive editing assumes exists.
+
+Each of those is a multi-week-or-more project by itself. The honest
+path to "a real shell on Voxi" runs through all of them, roughly in
+that order, and probably ends with something much smaller than bash
+(a dash/ash-sized shell is a far more realistic target than bash or
+zsh specifically) ported against a custom libc built for Voxi's own
+syscalls — not the stock Linux binary, which would need Voxi to *be*
+Linux-ABI-compatible to run at all.
+
 ## Current limits / what's next
 
 This is a real, booting kernel, not a toy stub — but it's still early-stage
 next to Linux or Windows. Honest next steps, roughly in order of how much
 they'd unlock:
 
-1. **Real memory isolation**: ring3 works, but every task shares the same
-   page tables (the whole 1 GiB identity map is just marked
-   user-accessible). A real process needs its own address space: a
-   per-task `CR3`, a proper `map_page`/`unmap_page`, and a higher-half
-   kernel so user and kernel addresses don't collide.
-2. **A process loader**: the ring3 demo is a C function compiled straight
-   into the kernel binary. Loading and running a *separate* ELF binary
-   needs the VFS/filesystem below, plus `execve`-style setup.
-3. **Filesystem**: a VFS layer, then something concrete (initrd, FAT, or a
-   custom FS) — needs a disk driver (ATA/AHCI) first.
-4. **More drivers**: proper framebuffer graphics, PCI enumeration, mouse.
-5. **SMP**: everything here assumes one CPU core.
+1. **Filesystem**: a VFS layer, then something concrete (initrd, FAT, or a
+   custom FS) — needs a disk driver (ATA/AHCI) first. The ramfs above is
+   a stand-in, not a real filesystem.
+2. **fork()/execve()/wait()**: right now a process can be spawned from the
+   shell, but nothing can spawn one *from code running as another
+   process* — there's no parent/child relationship yet.
+3. **A higher-half kernel + general-purpose `map_page`/`unmap_page`**: the
+   current per-process window is one fixed-size, fixed-address 2MiB
+   region good enough for a demo binary, not a general allocator for
+   arbitrary processes with arbitrary memory needs.
+4. **A libc port**: the real prerequisite for running anything written
+   against POSIX expectations, bash/zsh included (see above).
+5. **More drivers**: proper framebuffer graphics, PCI enumeration, mouse.
+6. **SMP**: everything here assumes one CPU core.
 
 The code is organized (`kernel/arch`, `kernel/drivers`, `kernel/mm`,
 `kernel/lib`) so each of these slots in without a rewrite.

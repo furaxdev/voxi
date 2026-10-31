@@ -33,8 +33,16 @@ bool scheduler_started(void);
  * practice): marks it dead and switches away for good. */
 void scheduler_kill_current_and_switch(void);
 
+/* Called when the *current* task exits cleanly via SYS_EXIT: marks it
+ * dead and switches away, same mechanics as a kill but counted
+ * separately so 'killcount' isn't lying about what actually happened. */
+void scheduler_exit_current_and_switch(void);
+
 /* How many tasks have been killed by a hardware fault so far. */
 uint64_t scheduler_kill_count(void);
+
+/* How many tasks have exited cleanly via SYS_EXIT so far. */
+uint64_t scheduler_exit_count(void);
 
 /* How many context switches (yield-driven or timer-driven, all of
  * them) have happened so far. */

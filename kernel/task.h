@@ -13,6 +13,9 @@ typedef enum {
 
 typedef struct task {
     uint64_t rsp;           /* saved stack pointer when not running */
+    uint64_t cr3;           /* this task's address space; the kernel's own
+                              * shared one by default, a process's private
+                              * one if process_spawn() overrides it */
     uint8_t *kstack;        /* base of this task's kernel stack, or NULL for the boot thread */
     void (*entry)(void *);
     void *arg;

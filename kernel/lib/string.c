@@ -95,6 +95,15 @@ uint64_t parse_hex(const char *s) {
     return v;
 }
 
+uint64_t parse_dec(const char *s) {
+    uint64_t v = 0;
+    while (*s >= '0' && *s <= '9') {
+        v = v * 10 + (uint64_t)(*s - '0');
+        s++;
+    }
+    return v;
+}
+
 char *next_token(char **cursor) {
     char *s = *cursor;
     while (*s == ' ' || *s == '\t') s++;

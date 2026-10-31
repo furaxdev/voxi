@@ -16,8 +16,11 @@
 #include "arch/x86_64/gdt.h"
 #include "lib/tsc.h"
 #include "generated_sloc.h"
+#include "drivers/rtc.h"
 
 #define LINE_MAX 128
+
+static void execute_line(char *line);
 
 static void read_line(char *buf, size_t max) {
     size_t len = 0;
@@ -72,6 +75,8 @@ static void cmd_help(void) {
     kprintf("  outport PORT VAL   write one byte to an I/O port (hex, hex)\n");
     kprintf("  lsmod              list loaded modules (there are none, ever)\n");
     kprintf("  uname              one-line system summary\n");
+    kprintf("  t N | CMD          run CMD after N seconds\n");
+    kprintf("  t -h HH:MM:SS | CMD  run CMD at that time of day (RTC-based)\n");
     kprintf("  reboot             reboot the machine\n");
     kprintf("  halt               stop the CPU\n");
 }
@@ -127,6 +132,72 @@ static void cmd_uname(void) {
             VOXI_SLOC, (unsigned long)boottime_ms());
 }
 
+/* `t 5 | echo hi`        -- run `echo hi` 5 seconds from now
+ * `t -h 14:56:00 | echo hi` -- run it at that time of day instead
+ *
+ * `args` is everything after "t " on the line, e.g. "5 | echo hi" or
+ * "-h 14:56:00 | echo hi". Blocks the shell until the deadline (via
+ * hlt, so the rest of the system keeps running preemptively), then
+ * feeds the part after '|' back through the normal command dispatch. */
+static void cmd_t(char *args) {
+    char *pipe_pos = strchr(args, '|');
+    if (!pipe_pos) {
+        kprintf("usage: t SECONDS | COMMAND   or   t -h HH:MM:SS | COMMAND\n");
+        return;
+    }
+    *pipe_pos = '\0';
+    char *command = pipe_pos + 1;
+    while (*command == ' ' || *command == '\t') command++;
+
+    char specbuf[64];
+    strncpy(specbuf, args, sizeof(specbuf) - 1);
+    specbuf[sizeof(specbuf) - 1] = '\0';
+    char *sc = specbuf;
+    char *tok = next_token(&sc);
+    uint64_t seconds_to_wait;
+
+    if (!tok) {
+        kprintf("usage: t SECONDS | COMMAND   or   t -h HH:MM:SS | COMMAND\n");
+        return;
+    } else if (strcmp(tok, "-h") == 0) {
+        char *timestr = next_token(&sc);
+        if (!timestr) {
+            kprintf("usage: t -h HH:MM:SS | COMMAND\n");
+            return;
+        }
+        long th = (long)parse_dec(timestr);
+        char *p1 = strchr(timestr, ':');
+        long tm = p1 ? (long)parse_dec(p1 + 1) : 0;
+        char *p2 = p1 ? strchr(p1 + 1, ':') : NULL;
+        long ts = p2 ? (long)parse_dec(p2 + 1) : 0;
+
+        uint8_t ch, cm, cs;
+        rtc_read(&ch, &cm, &cs);
+        long now_secs = (long)ch * 3600 + (long)cm * 60 + (long)cs;
+        long target_secs = th * 3600 + tm * 60 + ts;
+        long delta = target_secs - now_secs;
+        if (delta <= 0) delta += 86400;
+        seconds_to_wait = (uint64_t)delta;
+
+        kprintf("current RTC time ~%02ld:%02ld:%02ld, running at %02ld:%02ld:%02ld (in %lu s)\n",
+                (long)ch, (long)cm, (long)cs, th, tm, ts, (unsigned long)seconds_to_wait);
+    } else {
+        seconds_to_wait = parse_dec(tok);
+        kprintf("running in %lu s...\n", (unsigned long)seconds_to_wait);
+    }
+
+    uint64_t target_ticks = pit_ticks() + seconds_to_wait * PIT_HZ;
+    while (pit_ticks() < target_ticks) {
+        __asm__ volatile ("sti; hlt");
+    }
+
+    char cmdbuf[LINE_MAX];
+    strncpy(cmdbuf, command, LINE_MAX - 1);
+    cmdbuf[LINE_MAX - 1] = '\0';
+    kprintf("\n[t] running: %s\n", cmdbuf);
+    execute_line(cmdbuf);
+}
+
 static void reboot(void) {
     uint8_t good = 0x02;
     while (good & 0x02) good = inb(0x64);
@@ -134,25 +205,12 @@ static void reboot(void) {
     for (;;) __asm__ volatile ("hlt");
 }
 
-void shell_run(void) {
-    char line[LINE_MAX];
-
-    vga_set_color(VGA_LGREEN, VGA_BLACK);
-    kprintf("\nWelcome to Voxi! Type 'help' for a list of commands.\n");
-    vga_set_color(VGA_LGRAY, VGA_BLACK);
-
-    for (;;) {
-        vga_set_color(VGA_LCYAN, VGA_BLACK);
-        kprintf("voxi> ");
-        vga_set_color(VGA_LGRAY, VGA_BLACK);
-
-        read_line(line, LINE_MAX);
-
+static void execute_line(char *line) {
         char *cursor = line;
         char *cmd = next_token(&cursor);
 
         if (!cmd) {
-            continue;
+            return;
         } else if (strcmp(cmd, "help") == 0) {
             cmd_help();
         } else if (strcmp(cmd, "clear") == 0) {
@@ -229,6 +287,8 @@ void shell_run(void) {
             kprintf("with 'size' and 'sloc' -- everything it can do is already compiled in.\n");
         } else if (strcmp(cmd, "uname") == 0) {
             cmd_uname();
+        } else if (strcmp(cmd, "t") == 0) {
+            cmd_t(cursor);
         } else if (strcmp(cmd, "reboot") == 0) {
             kprintf("Rebooting...\n");
             reboot();
@@ -239,5 +299,21 @@ void shell_run(void) {
         } else {
             kprintf("unknown command: %s (try 'help')\n", cmd);
         }
+}
+
+void shell_run(void) {
+    char line[LINE_MAX];
+
+    vga_set_color(VGA_LGREEN, VGA_BLACK);
+    kprintf("\nWelcome to Voxi! Type 'help' for a list of commands.\n");
+    vga_set_color(VGA_LGRAY, VGA_BLACK);
+
+    for (;;) {
+        vga_set_color(VGA_LCYAN, VGA_BLACK);
+        kprintf("voxi> ");
+        vga_set_color(VGA_LGRAY, VGA_BLACK);
+
+        read_line(line, LINE_MAX);
+        execute_line(line);
     }
 }

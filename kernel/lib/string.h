@@ -19,6 +19,9 @@ char *strchr(const char *s, int c);
 /* Parses a hex number, with or without a leading "0x". */
 uint64_t parse_hex(const char *s);
 
+/* Parses a plain decimal number. */
+uint64_t parse_dec(const char *s);
+
 /* Splits on whitespace: returns the next token from *cursor (advancing
  * it past it and any trailing whitespace), or NULL if nothing is left.
  * Mutates the underlying buffer (writes a NUL after each token), same

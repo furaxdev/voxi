@@ -117,6 +117,14 @@ in this repo right now, not a plan.
     every claim above yourself — it's all in this repository, in full.
 30. **Do all of the above inside a kernel that fits in ~40 KB on disk.**
 
+And one more, added after the fact: schedule any shell command to run
+later with a one-word builtin -- `t 5 | echo hi` runs `echo hi` in 5
+seconds, `t -h 14:56:00 | echo hi` runs it at that time of day (read
+straight off the CMOS RTC). No `at`, no `cron`, no daemon -- just the
+shell blocking on `hlt` until the deadline, while everything else
+(the heartbeat task included) keeps running underneath it the whole
+time.
+
 Try them: boot it (`make run`) and type `help`.
 
 ## Building and running

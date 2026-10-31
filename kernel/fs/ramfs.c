@@ -4,26 +4,40 @@
 
 extern const uint8_t hello_elf_start[], hello_elf_end[];
 extern const uint8_t forkdemo_elf_start[], forkdemo_elf_end[];
+extern const uint8_t pipedemo_elf_start[], pipedemo_elf_end[];
+extern const uint8_t spin_elf_start[], spin_elf_end[];
+
+typedef struct {
+    const char *name;
+    const uint8_t *start;
+    const uint8_t *end;
+    const char *blurb;
+} ramfs_entry_t;
+
+static const ramfs_entry_t entries[] = {
+    { "hello",    hello_elf_start,    hello_elf_end,    "userland/hello.S -- a standalone ELF64 binary" },
+    { "forkdemo", forkdemo_elf_start, forkdemo_elf_end, "userland/fork_demo.c -- fork()+exec()+wait()" },
+    { "pipedemo", pipedemo_elf_start, pipedemo_elf_end, "userland/pipe_demo.c -- pipe()+fork(), real IPC" },
+    { "spin",     spin_elf_start,     spin_elf_end,     "userland/spin.c -- loops forever; try 'kill'" },
+};
+#define RAMFS_COUNT (sizeof(entries) / sizeof(entries[0]))
 
 bool ramfs_find(const char *name, const uint8_t **data, size_t *size) {
-    if (strcmp(name, "hello") == 0) {
-        *data = hello_elf_start;
-        *size = (size_t)(hello_elf_end - hello_elf_start);
-        return true;
-    }
-    if (strcmp(name, "forkdemo") == 0) {
-        *data = forkdemo_elf_start;
-        *size = (size_t)(forkdemo_elf_end - forkdemo_elf_start);
-        return true;
+    for (size_t i = 0; i < RAMFS_COUNT; i++) {
+        if (strcmp(name, entries[i].name) == 0) {
+            *data = entries[i].start;
+            *size = (size_t)(entries[i].end - entries[i].start);
+            return true;
+        }
     }
     return false;
 }
 
 void ramfs_list(void) {
-    kprintf("hello     %lu bytes  (userland/hello.S -- run with 'run hello')\n",
-            (unsigned long)(hello_elf_end - hello_elf_start));
-    kprintf("forkdemo  %lu bytes  (userland/fork_demo.c -- fork()+exec()+wait(),\n",
-            (unsigned long)(forkdemo_elf_end - forkdemo_elf_start));
-    kprintf("          run with 'run forkdemo')\n");
-    kprintf("both baked into the kernel image at build time -- no real disk yet.\n");
+    for (size_t i = 0; i < RAMFS_COUNT; i++) {
+        kprintf("%-10s %5lu bytes  %s\n", entries[i].name,
+                (unsigned long)(entries[i].end - entries[i].start), entries[i].blurb);
+    }
+    kprintf("all baked into the kernel image at build time -- no real disk yet.\n");
+    kprintf("run any of them with 'run NAME'.\n");
 }

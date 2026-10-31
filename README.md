@@ -226,40 +226,90 @@ silently read whatever the new program's memory happened to contain
 instead, logging the wrong filename even though the load itself still
 worked by coincidence.
 
+## Pipes and signals: `run pipedemo`, `run spin` + `kill`
+
+`pipedemo` (`userland/pipe_demo.c`) does real IPC: `pipe()`, then
+`fork()`, then the child writes a message into the write end and
+exits while the parent reads it back out the read end — the same
+mechanism a shell uses for `cmd1 | cmd2`:
+
+```
+voxi> run pipedemo
+run: spawned 'pipedemo' as task #6, entry=0x0000000040000000, own page tables (cr3=0x000000000052a000)
+[kernel] fork(): task 6 -> child task 7 (own copied address space)
+[kernel] task 7 exited via syscall (code 0)
+[pipe_demo] parent received 50 bytes: [pipe_demo] hello through a pipe, from the child!
+[kernel] task 6 exited via syscall (code 0)
+```
+
+A pipe (`kernel/syscall.c`) is a small kmalloc'd ring buffer. `SYS_PIPE`
+hands back a read fd and a write fd in the caller's own fd table (new
+in `task_t`: every task now has one, `fds[FD_MAX]`, defaulting to
+console-in/console-out/console-out for 0/1/2). `SYS_WRITE`/`SYS_READ`
+block (`yield()`-looping) when the buffer is full or empty, and return
+EOF/short once the other end is closed — closing itself is reference
+counted per end (`read_refs`/`write_refs`), which turned out to matter
+immediately: `fork()` copies the whole fd table, so after a fork both
+parent and child hold their own fd for the *same* write end. The first
+version let the parent's own `close()` mark the whole pipe
+write-closed — immediately, before the child had written anything —
+because it didn't know the child still held a copy. `pipedemo` read 0
+bytes every time until each end's close only takes effect once its
+refcount actually reaches zero.
+
+Signals are intentionally minimal: `SYS_KILL(pid, sig)` just sets a
+`pending_signal` field on the target task. There's no asynchronous
+delivery — it takes effect the next time the scheduler is about to
+resume that task (`scheduler_switch()` checks for it right there,
+before actually switching in), which in practice is "soon" since
+everything here eventually passes back through the scheduler via
+either `yield()` or the timer. `run spin` (`userland/spin.c`) loops
+forever specifically to give `kill PID` something to aim at:
+
+```
+voxi> run spin
+[spin] pid 8
+[spin] looping forever -- try 'kill <that pid>' from the shell
+voxi> kill 8
+sent SIGKILL to task 8 (takes effect next time it's scheduled)
+[kernel] task 8 killed by signal 9
+```
+
 ## Can it run bash or zsh?
 
 No, and this is worth being direct about rather than letting the
 question hang: not the real binaries, and not even their source code
-without substantial further work. `fork()`/`exec()`/`wait()` above
-*were* genuinely a chunk of that "multi-week" estimate — turns out
-they fit in an afternoon once the address-space work from the previous
-section already existed to build on. What's still actually missing:
+without substantial further work. `fork()`/`exec()`/`wait()`/pipes/
+signals above *were* genuinely the "multi-week" estimate from the
+previous version of this section — turns out each one fits in an
+afternoon once the address-space and scheduler work underneath it
+already exists to build on. What's still actually missing:
 
-- **A real filesystem on real storage.** There's a ramfs with two
+- **A real filesystem on real storage.** There's a ramfs with four
   hand-written demo files; there's no disk driver, no directory
   structure, nothing resembling `/bin` or `/etc`. This blocks loading
   anything you didn't bake into the kernel image at compile time.
 - **A libc.** Bash and zsh are written against glibc or a similar
   POSIX libc — `malloc`, `printf`, `readline`, locale support, all of
-  it. `userland/fork_demo.c` has none of that; it hand-rolls a 2-digit
+  it. `userland/ulib.h` has none of that; it hand-rolls a 2-digit
   integer-to-string conversion because there's no `itoa`, let alone
   `printf`. Getting to "enough of POSIX that bash's own source
   compiles" is a project in its own right.
-- **Pipes and signals.** `fork`/`exec`/`wait` are the process-control
-  third; shells also need `pipe()` for `|`, and signals for `Ctrl-C`,
-  job control, and `SIGCHLD`-driven reaping instead of a blocking
-  `wait()`.
-- **A tty layer** with `termios`, job control, and the line discipline
-  `readline` expects. Voxi's "terminal" is a VGA text buffer and a
-  keyboard IRQ (now with a blocking `SYS_READ` for user processes, see
-  below); there's no pty, no `SIGWINCH`, nothing a real shell's
-  interactive line editing assumes exists.
+- **Job control and `SIGCHLD`.** Signal delivery exists now, but only
+  `SIGKILL`-style "stop this task"; there's no signal *handling* (a
+  process catching its own signal and running a handler), no process
+  groups, no foreground/background, nothing `Ctrl-C`/`Ctrl-Z` or a
+  shell's job table needs.
+- **A tty layer** with `termios` and the line discipline `readline`
+  expects. Voxi's "terminal" is a VGA text buffer and a keyboard IRQ
+  (with a blocking `SYS_READ` for user processes); there's no pty, no
+  `SIGWINCH`, nothing a real shell's interactive line editing assumes
+  exists.
 
-The realistic path from here is still the same one, just shorter by
-one item: filesystem, then pipes/signals, then a libc port, landing on
-something dash/ash-sized rather than bash or zsh specifically — not
-the stock Linux binary, which would need Voxi to *be*
-Linux-ABI-compatible to run at all.
+The realistic path from here: filesystem, then a libc port, then
+job control/signal handling, landing on something dash/ash-sized
+rather than bash or zsh specifically — not the stock Linux binary,
+which would need Voxi to *be* Linux-ABI-compatible to run at all.
 
 ## Current limits / what's next
 
@@ -270,14 +320,15 @@ they'd unlock:
 1. **Filesystem**: a VFS layer, then something concrete (initrd, FAT, or a
    custom FS) — needs a disk driver (ATA/AHCI) first. The ramfs above is
    a stand-in, not a real filesystem.
-2. **Pipes and signals**: the other two legs process control needs
-   besides fork/exec/wait, and the two things a shell can't do without.
-3. **A higher-half kernel + general-purpose `map_page`/`unmap_page`**: the
+2. **A libc port**: the real prerequisite for running anything written
+   against POSIX expectations, bash/zsh included (see above).
+3. **Signal handling + job control**: delivery exists (`SYS_KILL`), but
+   only as "stop this task" -- no handler a process can install for its
+   own signals, no process groups, no foreground/background.
+4. **A higher-half kernel + general-purpose `map_page`/`unmap_page`**: the
    current per-process window is one fixed-size, fixed-address 2MiB
    region good enough for a demo binary (or two, fork-copied), not a
    general allocator for arbitrary processes with arbitrary memory needs.
-4. **A libc port**: the real prerequisite for running anything written
-   against POSIX expectations, bash/zsh included (see above).
 5. **More drivers**: proper framebuffer graphics, PCI enumeration, mouse.
 6. **SMP**: everything here assumes one CPU core.
 

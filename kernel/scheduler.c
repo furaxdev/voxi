@@ -60,6 +60,21 @@ void scheduler_switch(void) {
     task_t *prev = current;
     task_t *next = pick_next();
 
+    /* Signal delivery happens here, not asynchronously: a pending
+     * signal only takes effect the next time its target would
+     * otherwise be resumed. That's late by real-OS standards (a task
+     * stuck without ever yielding or being preempted could delay it
+     * indefinitely) but every task here does end up back through the
+     * scheduler eventually, via the timer if nothing else. */
+    while (next->pending_signal != 0 && next->state != TASK_DEAD) {
+        kprintf("[kernel] task %d killed by signal %d\n", next->id, next->pending_signal);
+        next->state = TASK_DEAD;
+        next->pending_signal = 0;
+        kill_count++;
+        current = next; /* so pick_next() searches onward from here */
+        next = pick_next();
+    }
+
     if (prev->state != TASK_DEAD) prev->state = TASK_READY;
     current = next;
     current->state = TASK_RUNNING;
@@ -141,4 +156,21 @@ bool scheduler_all_done(void) {
 
 task_t *scheduler_current(void) {
     return current;
+}
+
+task_t *scheduler_find_task(int id) {
+    if (!current) return NULL;
+    task_t *t = current;
+    do {
+        if (t->id == id) return t;
+        t = t->next;
+    } while (t != current);
+    return NULL;
+}
+
+bool scheduler_signal(int id, int sig) {
+    task_t *t = scheduler_find_task(id);
+    if (!t || t->state == TASK_DEAD) return false;
+    t->pending_signal = sig;
+    return true;
 }

@@ -4,12 +4,26 @@
 #include <voxi/types.h>
 
 #define TASK_KSTACK_SIZE (16 * 1024)
+#define FD_MAX 8
 
 typedef enum {
     TASK_READY,
     TASK_RUNNING,
     TASK_DEAD,
 } task_state_t;
+
+typedef enum {
+    FD_NONE,
+    FD_CONSOLE_IN,
+    FD_CONSOLE_OUT,
+    FD_PIPE_READ,
+    FD_PIPE_WRITE,
+} fd_type_t;
+
+typedef struct {
+    fd_type_t type;
+    void *obj; /* pipe_t*, for the two pipe fd types; unused otherwise */
+} fd_entry_t;
 
 typedef struct task {
     uint64_t rsp;           /* saved stack pointer when not running */
@@ -25,6 +39,10 @@ typedef struct task {
     int parent_id;          /* -1 if none (not spawned via fork()) */
     int exit_code;          /* set by SYS_EXIT, read by a parent's SYS_WAIT */
     bool reaped;            /* true once a SYS_WAIT has consumed exit_code */
+    int pending_signal;     /* set by SYS_KILL; delivered next time the
+                              * scheduler is about to resume this task */
+    fd_entry_t fds[FD_MAX]; /* fd 0/1/2 default to console in/out/out;
+                              * SYS_PIPE and SYS_CLOSE manage the rest */
     task_state_t state;
     struct task *next;      /* circular ready-queue link */
 } task_t;

@@ -13,6 +13,25 @@
 #define USER_STACK_PAGE (USER_BASE + 0x1FF000ull)
 #define USER_STACK_TOP  (USER_BASE + 0x200000ull)
 
+#define PIPE_BUF_SIZE 256
+
+/* A pipe is a tiny shared ring buffer, kmalloc'd once by SYS_PIPE and
+ * referenced by both fd table entries it creates. fork() copies the fd
+ * table, not the pipe -- so after a fork, both parent and child hold
+ * their own fd pointing at the SAME pipe_t, exactly like real fork().
+ * That's why read_refs/write_refs exist: the parent closing "its"
+ * write end must not mark the pipe write-closed while the child still
+ * holds a copy of that same end and hasn't written yet. Only when the
+ * last holder of a given end closes it does that end actually close.
+ * Never freed once both ends are gone -- a real kernel would refcount
+ * the whole object and free it; this one just leaks it. */
+typedef struct {
+    uint8_t buf[PIPE_BUF_SIZE];
+    uint32_t read_pos, write_pos, count;
+    int read_refs, write_refs;
+    bool read_closed, write_closed;
+} pipe_t;
+
 extern void enter_usermode(void (*entry)(void), uint64_t user_stack_top) __attribute__((noreturn));
 extern void enter_usermode_child(void (*entry)(void), uint64_t user_stack_top) __attribute__((noreturn));
 
@@ -41,9 +60,35 @@ static void syscall_handler(registers_t *regs) {
         case SYS_NOP:
             break;
 
-        case SYS_WRITE:
-            kprintf("%s", (const char *)regs->rdi);
+        case SYS_WRITE: {
+            int fd = (int)regs->rdi;
+            const char *buf = (const char *)regs->rsi;
+            uint64_t len = regs->rdx;
+            task_t *self = scheduler_current();
+
+            if (fd < 0 || fd >= FD_MAX) { regs->rax = (uint64_t)-1; break; }
+            fd_entry_t *e = &self->fds[fd];
+
+            if (e->type == FD_CONSOLE_OUT) {
+                for (uint64_t i = 0; i < len; i++) kprintf("%c", buf[i]);
+                regs->rax = len;
+            } else if (e->type == FD_PIPE_WRITE) {
+                pipe_t *p = (pipe_t *)e->obj;
+                uint64_t written = 0;
+                while (written < len) {
+                    if (p->read_closed) break; /* broken pipe: stop, return short count */
+                    if (p->count >= PIPE_BUF_SIZE) { yield(); continue; }
+                    p->buf[p->write_pos] = (uint8_t)buf[written];
+                    p->write_pos = (p->write_pos + 1) % PIPE_BUF_SIZE;
+                    p->count++;
+                    written++;
+                }
+                regs->rax = written;
+            } else {
+                regs->rax = (uint64_t)-1;
+            }
             break;
+        }
 
         case SYS_EXIT: {
             task_t *self = scheduler_current();
@@ -58,17 +103,95 @@ static void syscall_handler(registers_t *regs) {
             break;
 
         case SYS_READ: {
-            char *buf = (char *)regs->rdi;
-            uint64_t maxlen = regs->rsi;
-            uint64_t n = 0;
-            while (n < maxlen) {
-                char c = keyboard_getchar(); /* blocks (sti;hlt) until a key arrives */
-                if (c == '\n') break;
-                if (c == '\b') { if (n > 0) n--; continue; }
-                buf[n++] = c;
+            int fd = (int)regs->rdi;
+            char *buf = (char *)regs->rsi;
+            uint64_t maxlen = regs->rdx;
+            task_t *self = scheduler_current();
+
+            if (fd < 0 || fd >= FD_MAX) { regs->rax = (uint64_t)-1; break; }
+            fd_entry_t *e = &self->fds[fd];
+
+            if (e->type == FD_CONSOLE_IN) {
+                uint64_t n = 0;
+                while (n < maxlen) {
+                    char c = keyboard_getchar(); /* blocks (sti;hlt) until a key arrives */
+                    if (c == '\n') break;
+                    if (c == '\b') { if (n > 0) n--; continue; }
+                    buf[n++] = c;
+                }
+                if (n < maxlen) buf[n] = '\0';
+                regs->rax = n;
+            } else if (e->type == FD_PIPE_READ) {
+                pipe_t *p = (pipe_t *)e->obj;
+                uint64_t n = 0;
+                while (n < maxlen) {
+                    if (p->count == 0) {
+                        if (p->write_closed) break; /* EOF */
+                        yield();
+                        continue;
+                    }
+                    buf[n++] = (char)p->buf[p->read_pos];
+                    p->read_pos = (p->read_pos + 1) % PIPE_BUF_SIZE;
+                    p->count--;
+                }
+                regs->rax = n;
+            } else {
+                regs->rax = (uint64_t)-1;
             }
-            if (n < maxlen) buf[n] = '\0';
-            regs->rax = n;
+            break;
+        }
+
+        case SYS_PIPE: {
+            task_t *self = scheduler_current();
+            int rfd = -1, wfd = -1;
+            for (int i = 0; i < FD_MAX; i++) {
+                if (self->fds[i].type == FD_NONE) { rfd = i; break; }
+            }
+            for (int i = 0; i < FD_MAX; i++) {
+                if (i != rfd && self->fds[i].type == FD_NONE) { wfd = i; break; }
+            }
+            if (rfd < 0 || wfd < 0) { regs->rax = (uint64_t)-1; break; }
+
+            pipe_t *p = kmalloc(sizeof(pipe_t));
+            if (!p) { regs->rax = (uint64_t)-1; break; }
+            memset(p, 0, sizeof(*p));
+            p->read_refs = 1;
+            p->write_refs = 1;
+
+            self->fds[rfd].type = FD_PIPE_READ;
+            self->fds[rfd].obj = p;
+            self->fds[wfd].type = FD_PIPE_WRITE;
+            self->fds[wfd].obj = p;
+
+            int *out = (int *)regs->rdi;
+            out[0] = rfd;
+            out[1] = wfd;
+            regs->rax = 0;
+            break;
+        }
+
+        case SYS_CLOSE: {
+            int fd = (int)regs->rdi;
+            task_t *self = scheduler_current();
+            if (fd < 0 || fd >= FD_MAX) { regs->rax = (uint64_t)-1; break; }
+            fd_entry_t *e = &self->fds[fd];
+            if (e->type == FD_PIPE_READ) {
+                pipe_t *p = (pipe_t *)e->obj;
+                if (--p->read_refs <= 0) p->read_closed = true;
+            } else if (e->type == FD_PIPE_WRITE) {
+                pipe_t *p = (pipe_t *)e->obj;
+                if (--p->write_refs <= 0) p->write_closed = true;
+            }
+            e->type = FD_NONE;
+            e->obj = NULL;
+            regs->rax = 0;
+            break;
+        }
+
+        case SYS_KILL: {
+            int pid = (int)regs->rdi;
+            int sig = (int)regs->rsi;
+            regs->rax = scheduler_signal(pid, sig) ? 0 : (uint64_t)-1;
             break;
         }
 
@@ -113,6 +236,12 @@ static void syscall_handler(registers_t *regs) {
             child->cr3 = child_as->pml4_phys;
             child->as = child_as;
             child->parent_id = parent->id;
+            memcpy(child->fds, parent->fds, sizeof(parent->fds)); /* shares pipe
+                                               * objects by pointer, same as real fork() */
+            for (int i = 0; i < FD_MAX; i++) {
+                if (child->fds[i].type == FD_PIPE_READ) ((pipe_t *)child->fds[i].obj)->read_refs++;
+                else if (child->fds[i].type == FD_PIPE_WRITE) ((pipe_t *)child->fds[i].obj)->write_refs++;
+            }
 
             kprintf("[kernel] fork(): task %d -> child task %d (own copied address space)\n",
                     parent->id, child->id);
@@ -199,11 +328,20 @@ void syscall_init(void) {
 }
 
 void sys_write(const char *s) {
+    /* Convenience wrapper kept for the kernel's own ring3 demos
+     * (ring3_main below, diag.c's crashtest): computes the length
+     * itself and issues the real 3-argument SYS_WRITE (fd=1) so
+     * callers don't need updating just because the syscall ABI grew
+     * an fd and an explicit length. */
+    size_t len = 0;
+    while (s[len]) len++;
     __asm__ volatile (
         "mov $1, %%rax\n"
-        "mov %0, %%rdi\n"
+        "mov $1, %%rdi\n"
+        "mov %0, %%rsi\n"
+        "mov %1, %%rdx\n"
         "int $0x80\n"
-        :: "r"(s) : "rax", "rdi"
+        :: "r"(s), "r"(len) : "rax", "rdi", "rsi", "rdx"
     );
 }
 

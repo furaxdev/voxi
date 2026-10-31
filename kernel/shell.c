@@ -19,6 +19,7 @@
 #include "drivers/rtc.h"
 #include "process.h"
 #include "fs/ramfs.h"
+#include "syscall.h"
 
 #define LINE_MAX 128
 
@@ -81,6 +82,7 @@ static void cmd_help(void) {
     kprintf("  t -h HH:MM:SS | CMD  same, at that time of day (RTC-based)\n");
     kprintf("  ls                 list files in the ramfs\n");
     kprintf("  run NAME           load+run a ramfs ELF binary as a real isolated process\n");
+    kprintf("  kill PID           send SIGKILL to a task, delivered next time it's scheduled\n");
     kprintf("  reboot             reboot the machine\n");
     kprintf("  halt               stop the CPU\n");
 }
@@ -315,6 +317,17 @@ static void execute_line(char *line) {
         } else if (strcmp(cmd, "run") == 0) {
             char *name = next_token(&cursor);
             if (name) process_spawn(name); else kprintf("usage: run NAME\n");
+        } else if (strcmp(cmd, "kill") == 0) {
+            char *pidstr = next_token(&cursor);
+            if (!pidstr) {
+                kprintf("usage: kill PID\n");
+            } else {
+                int pid = (int)parse_dec(pidstr);
+                if (scheduler_signal(pid, SIGKILL))
+                    kprintf("sent SIGKILL to task %d (takes effect next time it's scheduled)\n", pid);
+                else
+                    kprintf("no such task: %d\n", pid);
+            }
         } else if (strcmp(cmd, "reboot") == 0) {
             kprintf("Rebooting...\n");
             reboot();

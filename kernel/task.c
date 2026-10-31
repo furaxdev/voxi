@@ -3,6 +3,16 @@
 #include "mm/vmm.h"
 #include "scheduler.h"
 
+static void init_default_fds(task_t *t) {
+    for (int i = 0; i < FD_MAX; i++) {
+        t->fds[i].type = FD_NONE;
+        t->fds[i].obj = NULL;
+    }
+    t->fds[0].type = FD_CONSOLE_IN;
+    t->fds[1].type = FD_CONSOLE_OUT;
+    t->fds[2].type = FD_CONSOLE_OUT;
+}
+
 void task_trampoline(void) {
     task_t *self = scheduler_current();
     self->entry(self->arg);
@@ -30,6 +40,8 @@ task_t *task_create(void (*entry)(void *), void *arg, int id) {
     t->parent_id = -1;
     t->exit_code = 0;
     t->reaped = false;
+    t->pending_signal = 0;
+    init_default_fds(t);
 
     /* Build an initial stack frame matching what switch_to() expects to
      * pop (r15,r14,r13,r12,rbx,rbp) followed by a return address. Since a
@@ -63,5 +75,7 @@ task_t *task_wrap_current(int id) {
     t->parent_id = -1;
     t->exit_code = 0;
     t->reaped = false;
+    t->pending_signal = 0;
+    init_default_fds(t);
     return t;
 }

@@ -58,4 +58,12 @@ uint64_t scheduler_switch_count(void);
  * the complete process table, exhaustively, on one screen. */
 void scheduler_dump(void);
 
+/* Finds a task by id, or NULL. */
+task_t *scheduler_find_task(int id);
+
+/* Marks `id` for signal delivery; takes effect the next time the
+ * scheduler would resume it (see the loop in scheduler_switch()).
+ * Returns false if no such task exists or it's already dead. */
+bool scheduler_signal(int id, int sig);
+
 #endif

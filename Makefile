@@ -15,6 +15,8 @@ LDFLAGS = -n -T $(BOOT_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 USERLAND_DIR = userland
 USER_ELF = $(BUILD_DIR)/userland/hello.elf
 USER_ELF2 = $(BUILD_DIR)/userland/forkdemo.elf
+USER_ELF3 = $(BUILD_DIR)/userland/pipedemo.elf
+USER_ELF4 = $(BUILD_DIR)/userland/spin.elf
 
 C_SRCS := $(shell find $(KERNEL_DIR) -name '*.c')
 S_SRCS := $(BOOT_DIR)/boot.S $(KERNEL_DIR)/arch/x86_64/isr.S \
@@ -72,8 +74,18 @@ $(USER_ELF2): $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o \
 	$(LD) -n -T $(USERLAND_DIR)/linker.ld -o $@ \
 	    $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o $(BUILD_DIR)/userland/fork_demo.o
 
-# ramfs_data.S .incbin's both paths above, so they must exist first.
-$(BUILD_DIR)/$(KERNEL_DIR)/fs/ramfs_data.o: $(USER_ELF) $(USER_ELF2)
+$(USER_ELF3): $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o \
+              $(BUILD_DIR)/userland/pipe_demo.o $(USERLAND_DIR)/linker.ld
+	$(LD) -n -T $(USERLAND_DIR)/linker.ld -o $@ \
+	    $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o $(BUILD_DIR)/userland/pipe_demo.o
+
+$(USER_ELF4): $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o \
+              $(BUILD_DIR)/userland/spin.o $(USERLAND_DIR)/linker.ld
+	$(LD) -n -T $(USERLAND_DIR)/linker.ld -o $@ \
+	    $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o $(BUILD_DIR)/userland/spin.o
+
+# ramfs_data.S .incbin's all the paths above, so they must exist first.
+$(BUILD_DIR)/$(KERNEL_DIR)/fs/ramfs_data.o: $(USER_ELF) $(USER_ELF2) $(USER_ELF3) $(USER_ELF4)
 
 $(KERNEL_BIN): $(OBJS) $(BOOT_DIR)/linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)

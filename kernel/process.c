@@ -1,6 +1,6 @@
 #include "process.h"
 #include "elf.h"
-#include "fs/ramfs.h"
+#include "fs/vfs.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
 #include "mm/heap.h"
@@ -28,19 +28,23 @@ static void process_trampoline(void *arg) {
 bool process_spawn(const char *name) {
     const uint8_t *data;
     size_t size;
-    if (!ramfs_find(name, &data, &size)) {
-        kprintf("run: no such file: %s (try 'ls')\n", name);
+    bool needs_free;
+    if (!vfs_find(name, &data, &size, &needs_free)) {
+        kprintf("run: no such file: %s (try 'ls' or 'diskls')\n", name);
         return false;
     }
 
     address_space_t *as = vmm_create_address_space();
     if (!as) {
+        if (needs_free) kfree((void *)data);
         kprintf("run: out of address spaces\n");
         return false;
     }
 
     uint64_t entry;
-    if (!elf_load(data, size, as, &entry)) {
+    bool loaded = elf_load(data, size, as, &entry);
+    if (needs_free) kfree((void *)data); /* elf_load already copied what it needs */
+    if (!loaded) {
         kprintf("run: failed to load %s\n", name);
         return false;
     }

@@ -15,6 +15,8 @@
 #include "syscall.h"
 #include "heartbeat.h"
 #include "boottime.h"
+#include "fs/sfs.h"
+#include "fs/ramfs.h"
 #include "shell.h"
 
 extern uint8_t kernel_end[];
@@ -62,6 +64,17 @@ void kernel_main(uint64_t multiboot_addr) {
 
     pmm_init(multiboot_addr, (uint64_t)kernel_end);
     heap_init(1024); /* 4 MiB initial heap */
+
+    sfs_init();
+    if (sfs_was_just_formatted()) {
+        const uint8_t *seed_data;
+        size_t seed_size;
+        if (ramfs_find("hello", &seed_data, &seed_size)) {
+            sfs_write("hello_disk", seed_data, seed_size);
+            kprintf("[sfs]  seeded 'hello_disk' onto the (blank) disk -- survives a reboot;\n");
+            kprintf("       try 'diskls', 'run hello_disk', then 'reboot' and 'diskls' again\n");
+        }
+    }
 
     pit_init(PIT_HZ);
     keyboard_init();

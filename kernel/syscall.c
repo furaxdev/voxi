@@ -5,7 +5,7 @@
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "elf.h"
-#include "fs/ramfs.h"
+#include "fs/vfs.h"
 #include "drivers/keyboard.h"
 #include "lib/string.h"
 #include "lib/kprintf.h"
@@ -274,7 +274,8 @@ static void syscall_handler(registers_t *regs) {
 
             const uint8_t *data;
             size_t size;
-            if (!ramfs_find(namebuf, &data, &size)) {
+            bool needs_free;
+            if (!vfs_find(namebuf, &data, &size, &needs_free)) {
                 kprintf("[kernel] exec(): no such file: %s\n", namebuf);
                 regs->rax = (uint64_t)-1;
                 break;
@@ -283,7 +284,9 @@ static void syscall_handler(registers_t *regs) {
             vmm_reset_user_window(as);
 
             uint64_t entry;
-            if (!elf_load(data, size, as, &entry)) {
+            bool loaded = elf_load(data, size, as, &entry);
+            if (needs_free) kfree((void *)data);
+            if (!loaded) {
                 regs->rax = (uint64_t)-1;
                 break;
             }

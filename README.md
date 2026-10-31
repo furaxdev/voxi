@@ -138,18 +138,26 @@ make iso      # produce build/voxi.iso (GRUB2 bootable)
 make run      # boot it in QEMU (graphical window + serial on stdio)
 ```
 
+`make run`/`make run-nographic` also create `build/disk.img` (a blank
+1MiB disk, only once — it's not regenerated on later builds, since the
+whole point of `kernel/fs/sfs.c` is that files written to it survive)
+and attach it as a real IDE drive. To start over with a blank disk,
+just delete it: `rm build/disk.img`.
+
 For a headless box:
 
 ```sh
-qemu-system-x86_64 -cdrom build/voxi.iso -serial stdio -display none -m 512M
+qemu-system-x86_64 -cdrom build/voxi.iso \
+    -drive file=build/disk.img,format=raw,if=ide,index=0,media=disk \
+    -serial stdio -display none -m 512M
 ```
 
 ## Running a separate program: `run hello`
 
 `run hello` loads `hello` — a tiny standalone ELF64 binary
 (`userland/hello.S`, baked into the kernel image at build time via
-`kernel/fs/ramfs_data.S`, since there's no disk driver yet to read it
-from a real filesystem) — and runs it as a genuinely isolated process:
+`kernel/fs/ramfs_data.S` — the real on-disk filesystem is a later
+section) — and runs it as a genuinely isolated process:
 
 - `kernel/mm/vmm.c` builds it a private address space: a fresh `PML4`
   whose entry 0 reuses the kernel's own shared 0-1GiB mapping (so
@@ -275,13 +283,65 @@ sent SIGKILL to task 8 (takes effect next time it's scheduled)
 [kernel] task 8 killed by signal 9
 ```
 
+## A real filesystem on a real disk: `diskls`, `diskwrite`, `diskread`
+
+Everything above (`ls`, `run hello`, ...) reads from the ramfs — demo
+binaries embedded in the kernel image at build time, gone the moment
+you'd change them without recompiling. This is the real thing: an ATA
+PIO driver (`kernel/drivers/ata.c`) talking to an actual block device
+(`-drive file=build/disk.img,format=raw,if=ide`, wired up by `make
+run`), and a from-scratch on-disk format (`kernel/fs/sfs.c`, "SFS" —
+not FAT, not ext2, just complex enough to need a real superblock, a
+real file table, and real contiguous sector allocation):
+
+```
+LBA 0:   superblock (magic "SFS1", file count, next free LBA)
+LBA 1:   file table (16 entries x 32 bytes: name, start LBA, size)
+LBA 2+:  file data, contiguous per file, no fragmentation support
+```
+
+First boot against a blank disk formats it and seeds one file,
+`hello_disk` (literally the `hello` binary, copied onto the disk —
+hence it still prints "loaded from ramfs", since the binary itself
+has no idea where it was read from this time):
+
+```
+[sfs] formatted a blank disk (no 'SFS1' magic found)
+[sfs] wrote 'hello_disk': 984 bytes at lba 2
+```
+
+And then, the part that actually matters — persistence that survives
+more than an in-VM `reboot`, verified by killing the QEMU *process*
+entirely and starting a fresh one against the same `build/disk.img`:
+
+```
+voxi> diskwrite greeting hey furax ca banger
+[sfs] wrote 'greeting': 19 bytes at lba 4
+voxi> diskread greeting
+hey furax ca banger
+```
+*(qemu killed, a brand new qemu-system-x86_64 started against the same disk.img)*
+```
+[sfs] mounted existing filesystem: 2 file(s)
+voxi> diskls
+hello_disk          984 bytes  (lba 2)
+greeting             19 bytes  (lba 4)
+voxi> diskread greeting
+hey furax ca banger
+```
+
+`run NAME` and `exec()` both go through a small VFS dispatcher
+(`kernel/fs/vfs.c`) now: ramfs first, then SFS — so `run hello_disk`
+loads and runs an ELF binary read sector-by-sector off the disk, in
+its own address space, exactly like the ramfs-backed ones.
+
 ## Can it run bash or zsh?
 
 No, and this is worth being direct about rather than letting the
 question hang: not the real binaries, and not even their source code
-without substantial further work. `fork()`/`exec()`/`wait()`/pipes/
-signals above *were* genuinely the "multi-week" estimate from the
-previous version of this section — turns out each one fits in an
+without substantial further work. Every item in the last three
+sections *was* genuinely part of the "multi-week" estimate from
+earlier versions of this section — turns out each one fits in an
 afternoon once the address-space and scheduler work underneath it
 already exists to build on. What's still actually missing:
 
@@ -317,11 +377,12 @@ This is a real, booting kernel, not a toy stub — but it's still early-stage
 next to Linux or Windows. Honest next steps, roughly in order of how much
 they'd unlock:
 
-1. **Filesystem**: a VFS layer, then something concrete (initrd, FAT, or a
-   custom FS) — needs a disk driver (ATA/AHCI) first. The ramfs above is
-   a stand-in, not a real filesystem.
-2. **A libc port**: the real prerequisite for running anything written
+1. **A libc port**: the real prerequisite for running anything written
    against POSIX expectations, bash/zsh included (see above).
+2. **A real directory structure + a bigger/better on-disk format**: SFS
+   has no subdirectories, no fragmentation support, no deletion-and-reuse
+   of freed space, and a flat 16-file table. Fine for proving the
+   driver and the concept; a real `/bin`, `/etc`, `/home` needs more.
 3. **Signal handling + job control**: delivery exists (`SYS_KILL`), but
    only as "stop this task" -- no handler a process can install for its
    own signals, no process groups, no foreground/background.
@@ -329,7 +390,9 @@ they'd unlock:
    current per-process window is one fixed-size, fixed-address 2MiB
    region good enough for a demo binary (or two, fork-copied), not a
    general allocator for arbitrary processes with arbitrary memory needs.
-5. **More drivers**: proper framebuffer graphics, PCI enumeration, mouse.
+5. **More drivers**: proper framebuffer graphics, PCI enumeration, mouse,
+   AHCI (the ATA PIO driver above works but is the simplest, slowest
+   way to talk to a disk).
 6. **SMP**: everything here assumes one CPU core.
 
 The code is organized (`kernel/arch`, `kernel/drivers`, `kernel/mm`,

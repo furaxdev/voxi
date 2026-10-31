@@ -31,6 +31,8 @@ DEPS   := $(C_OBJS:.o=.d)
 KERNEL_BIN = $(BUILD_DIR)/voxi.bin
 ISO_IMAGE  = $(BUILD_DIR)/voxi.iso
 SLOC_HDR   = $(KERNEL_DIR)/generated_sloc.h
+DISK_IMAGE = $(BUILD_DIR)/disk.img
+QEMU_DISK  = -drive file=$(DISK_IMAGE),format=raw,if=ide,index=0,media=disk
 
 .PHONY: all clean run run-nographic iso
 
@@ -97,11 +99,18 @@ iso: $(KERNEL_BIN)
 	cp $(ISO_DIR)/boot/grub/grub.cfg $(BUILD_DIR)/isoroot/boot/grub/grub.cfg
 	grub-mkrescue -o $(ISO_IMAGE) $(BUILD_DIR)/isoroot
 
-run: iso
-	qemu-system-x86_64 -cdrom $(ISO_IMAGE) -serial stdio -m 512M
+# A blank 1MiB disk image for the real on-disk filesystem (kernel/fs/sfs.c).
+# Only created if missing, so it persists across rebuilds -- the whole
+# point is that files written to it survive a reboot of the VM.
+$(DISK_IMAGE):
+	@mkdir -p $(dir $@)
+	dd if=/dev/zero of=$@ bs=512 count=2048 status=none
 
-run-nographic: iso
-	qemu-system-x86_64 -cdrom $(ISO_IMAGE) -serial stdio -display none -m 512M
+run: iso $(DISK_IMAGE)
+	qemu-system-x86_64 -cdrom $(ISO_IMAGE) $(QEMU_DISK) -serial stdio -m 512M
+
+run-nographic: iso $(DISK_IMAGE)
+	qemu-system-x86_64 -cdrom $(ISO_IMAGE) $(QEMU_DISK) -serial stdio -display none -m 512M
 
 clean:
 	rm -rf $(BUILD_DIR)

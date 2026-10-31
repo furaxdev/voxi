@@ -19,6 +19,7 @@
 #include "drivers/rtc.h"
 #include "process.h"
 #include "fs/ramfs.h"
+#include "fs/sfs.h"
 #include "syscall.h"
 
 #define LINE_MAX 128
@@ -83,6 +84,9 @@ static void cmd_help(void) {
     kprintf("  ls                 list files in the ramfs\n");
     kprintf("  run NAME           load+run a ramfs ELF binary as a real isolated process\n");
     kprintf("  kill PID           send SIGKILL to a task, delivered next time it's scheduled\n");
+    kprintf("  diskls             list files on the real on-disk filesystem (SFS)\n");
+    kprintf("  diskread NAME      print a file from disk\n");
+    kprintf("  diskwrite NAME T.. create a file on disk with the rest of the line as its content\n");
     kprintf("  reboot             reboot the machine\n");
     kprintf("  halt               stop the CPU\n");
 }
@@ -317,6 +321,31 @@ static void execute_line(char *line) {
         } else if (strcmp(cmd, "run") == 0) {
             char *name = next_token(&cursor);
             if (name) process_spawn(name); else kprintf("usage: run NAME\n");
+        } else if (strcmp(cmd, "diskls") == 0) {
+            sfs_list();
+        } else if (strcmp(cmd, "diskwrite") == 0) {
+            char *name = next_token(&cursor);
+            while (*cursor == ' ' || *cursor == '\t') cursor++;
+            if (!name || !*cursor) {
+                kprintf("usage: diskwrite NAME TEXT...\n");
+            } else {
+                sfs_write(name, (const uint8_t *)cursor, strlen(cursor));
+            }
+        } else if (strcmp(cmd, "diskread") == 0) {
+            char *name = next_token(&cursor);
+            if (!name) {
+                kprintf("usage: diskread NAME\n");
+            } else {
+                uint8_t *data;
+                size_t size;
+                if (sfs_find(name, &data, &size)) {
+                    for (size_t i = 0; i < size; i++) kprintf("%c", data[i]);
+                    kprintf("\n");
+                    kfree(data);
+                } else {
+                    kprintf("no such file on disk: %s\n", name);
+                }
+            }
         } else if (strcmp(cmd, "kill") == 0) {
             char *pidstr = next_token(&cursor);
             if (!pidstr) {

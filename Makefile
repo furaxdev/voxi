@@ -23,12 +23,20 @@ DEPS   := $(C_OBJS:.o=.d)
 
 KERNEL_BIN = $(BUILD_DIR)/voxi.bin
 ISO_IMAGE  = $(BUILD_DIR)/voxi.iso
+SLOC_HDR   = $(KERNEL_DIR)/generated_sloc.h
 
 .PHONY: all clean run run-nographic iso
 
 all: $(KERNEL_BIN)
 
-$(BUILD_DIR)/%.o: %.c
+# Regenerated on every build so the number is always accurate -- cheap,
+# and diag.c's #include picks it up whenever it changes.
+$(SLOC_HDR): $(C_SRCS) $(S_SRCS)
+	@n=$$(cat $$(find $(BOOT_DIR) $(KERNEL_DIR) -name '*.c' -o -name '*.h' -o -name '*.S' \
+	    | grep -v generated_sloc.h) | wc -l); \
+	echo "#define VOXI_SLOC $$n" > $@
+
+$(BUILD_DIR)/%.o: %.c $(SLOC_HDR)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

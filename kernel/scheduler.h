@@ -33,4 +33,15 @@ bool scheduler_started(void);
  * practice): marks it dead and switches away for good. */
 void scheduler_kill_current_and_switch(void);
 
+/* How many tasks have been killed by a hardware fault so far. */
+uint64_t scheduler_kill_count(void);
+
+/* How many context switches (yield-driven or timer-driven, all of
+ * them) have happened so far. */
+uint64_t scheduler_switch_count(void);
+
+/* Prints every task currently known to the scheduler and its state --
+ * the complete process table, exhaustively, on one screen. */
+void scheduler_dump(void);
+
 #endif

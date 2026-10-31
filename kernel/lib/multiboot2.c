@@ -1,5 +1,10 @@
 #include <voxi/multiboot2.h>
 
+static uint64_t boot_addr = 0;
+
+void mb2_set_boot_addr(uint64_t addr) { boot_addr = addr; }
+uint64_t mb2_get_boot_addr(void) { return boot_addr; }
+
 struct mb2_tag *mb2_find_tag(uint64_t addr, uint32_t type) {
     uint32_t total_size = *(uint32_t *)(uintptr_t)addr;
     uint8_t *ptr = (uint8_t *)(uintptr_t)addr + 8; /* skip total_size + reserved */

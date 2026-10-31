@@ -7,7 +7,18 @@ extern void switch_to(uint64_t *old_rsp_store, uint64_t new_rsp);
 static task_t *current = NULL;
 static int next_id = 1;
 static bool started = false;
+static uint64_t kill_count = 0;
+static uint64_t switch_count = 0;
 static uint8_t main_task_rsp0_stack[4096];
+
+static const char *state_name(task_state_t s) {
+    switch (s) {
+        case TASK_READY: return "ready";
+        case TASK_RUNNING: return "running";
+        case TASK_DEAD: return "dead";
+    }
+    return "?";
+}
 
 static void set_rsp0_for(task_t *t) {
     uint64_t top = t->kstack
@@ -44,6 +55,7 @@ static task_t *pick_next(void) {
 }
 
 void scheduler_switch(void) {
+    switch_count++;
     task_t *prev = current;
     task_t *next = pick_next();
 
@@ -57,7 +69,31 @@ void scheduler_switch(void) {
 
 void scheduler_kill_current_and_switch(void) {
     current->state = TASK_DEAD;
+    kill_count++;
     scheduler_switch(); /* never resumes this task again */
+}
+
+uint64_t scheduler_kill_count(void) {
+    return kill_count;
+}
+
+uint64_t scheduler_switch_count(void) {
+    return switch_count;
+}
+
+void scheduler_dump(void) {
+    if (!current) {
+        kprintf("scheduler not started\n");
+        return;
+    }
+    kprintf("id   state    kstack\n");
+    task_t *t = current;
+    do {
+        kprintf("%-4d %-8s %p%s\n", t->id, state_name(t->state),
+                (void *)t->kstack, t == current ? "  <- current" : "");
+        t = t->next;
+    } while (t != current);
+    kprintf("tasks killed by hardware faults so far: %lu\n", (unsigned long)kill_count);
 }
 
 bool scheduler_all_done(void) {

@@ -15,4 +15,8 @@ typedef void (*interrupt_handler_t)(registers_t *regs);
 void idt_init(void);
 void register_interrupt_handler(uint8_t n, interrupt_handler_t handler);
 
+/* Prints every populated IDT entry: the whole interrupt dispatch table
+ * of the system, in full, on one screen. */
+void idt_dump(void);
+
 #endif

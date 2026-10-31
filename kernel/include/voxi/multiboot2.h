@@ -45,4 +45,10 @@ struct mb2_tag_mmap {
  * Returns NULL if not found. */
 struct mb2_tag *mb2_find_tag(uint64_t addr, uint32_t type);
 
+/* The multiboot2 info pointer the bootloader handed kernel_main(),
+ * stashed away so any later code (shell commands included) can look at
+ * it without threading it through every call. */
+void mb2_set_boot_addr(uint64_t addr);
+uint64_t mb2_get_boot_addr(void);
+
 #endif

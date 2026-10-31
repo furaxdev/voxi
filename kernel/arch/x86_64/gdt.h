@@ -10,6 +10,10 @@
 
 void gdt_init(void);
 
+/* Prints every one of the handful of GDT entries this whole system
+ * uses -- the entire segmentation setup, in full. */
+void gdt_dump(void);
+
 /* Updates the TSS's rsp0: the stack the CPU loads automatically whenever
  * an interrupt or exception crosses from ring3 into ring0. Called by the
  * scheduler every time it switches to a new current task. */

@@ -1,5 +1,6 @@
 #include "gdt.h"
 #include "../../lib/string.h"
+#include "../../lib/kprintf.h"
 
 struct tss_t {
     uint32_t reserved0;
@@ -29,7 +30,8 @@ static void set_tss_descriptor(uint64_t base, uint32_t limit) {
     gdt[5] = (uint64_t)(limit & 0xFFFF)
            | ((base & 0xFFFFFF) << 16)
            | (0x89ull << 40)                    /* present, type=9 (64-bit TSS) */
-           | (((uint64_t)(limit >> 16) & 0xF) << 48);
+           | (((uint64_t)(limit >> 16) & 0xF) << 48)
+           | (((base >> 24) & 0xFF) << 56);
     gdt[6] = (base >> 32) & 0xFFFFFFFFull;
 }
 
@@ -65,4 +67,18 @@ void gdt_init(void) {
 
 void tss_set_rsp0(uint64_t rsp0) {
     tss.rsp0 = rsp0;
+}
+
+void gdt_dump(void) {
+    static const char *names[7] = {
+        "null", "kernel code", "kernel data", "user data",
+        "user code", "tss (low)", "tss (high)"
+    };
+    kprintf("idx  selector  description   raw descriptor\n");
+    for (int i = 0; i < 7; i++) {
+        kprintf("%3d  0x%02x      %-12s  %016lx\n", i, i * 8, names[i],
+                (unsigned long)gdt[i]);
+    }
+    kprintf("TSS at %p, rsp0=%p, iomap_base=%u\n", (void *)&tss,
+            (void *)tss.rsp0, (unsigned)tss.iomap_base);
 }

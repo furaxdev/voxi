@@ -27,8 +27,11 @@ static inline void io_wait(void) {
     outb(0x80, 0);
 }
 
-static inline void cli(void) { __asm__ volatile ("cli"); }
-static inline void sti(void) { __asm__ volatile ("sti"); }
-static inline void hlt(void) { __asm__ volatile ("hlt"); }
+/* "memory" clobbers make these full compiler barriers, so surrounding
+ * reads/writes can't get reordered across the actual interrupt-enable
+ * boundary. */
+static inline void cli(void) { __asm__ volatile ("cli" ::: "memory"); }
+static inline void sti(void) { __asm__ volatile ("sti" ::: "memory"); }
+static inline void hlt(void) { __asm__ volatile ("hlt" ::: "memory"); }
 
 #endif

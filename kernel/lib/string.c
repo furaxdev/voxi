@@ -78,3 +78,30 @@ char *strchr(const char *s, int c) {
     }
     return (c == '\0') ? (char *)s : NULL;
 }
+
+uint64_t parse_hex(const char *s) {
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+    uint64_t v = 0;
+    while (*s) {
+        char c = *s;
+        int d;
+        if (c >= '0' && c <= '9') d = c - '0';
+        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+        else break;
+        v = v * 16 + (uint64_t)d;
+        s++;
+    }
+    return v;
+}
+
+char *next_token(char **cursor) {
+    char *s = *cursor;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '\0') { *cursor = s; return NULL; }
+    char *start = s;
+    while (*s && *s != ' ' && *s != '\t') s++;
+    if (*s) { *s = '\0'; s++; }
+    *cursor = s;
+    return start;
+}

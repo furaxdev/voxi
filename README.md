@@ -57,6 +57,68 @@ solving a different, much bigger problem. Voxi only has to be Voxi.
   memory isolation yet (same page tables, just marked user-accessible) —
   that's the next layer, see below.
 
+## 30 things in here that Linux structurally cannot do
+
+Not "Linux is worse at" — things that are impossible *by construction*
+for a multi-million-line, general-purpose, multi-user OS to do, because
+being general-purpose and multi-user is exactly what makes them
+impossible. Every one of these is a real, working command or mechanism
+in this repo right now, not a plan.
+
+ 1. **Boot to an interactive shell in single-digit milliseconds** (`boottime`) —
+    no initrd, no driver probing, no init system.
+ 2. **Measure its own exact clock speed** via a self-calibrating TSC/PIT
+    cross-check (`freq`).
+ 3. **Report the live CPU timestamp counter** on demand (`cycles`).
+ 4. **Show hardware time and OS time side by side**, both exact (`clock`).
+ 5. **Prove preemption is real, not cooperative**, with a task that
+    *never* calls yield and runs forever anyway (`heartbeat`).
+ 6. **List every task in the entire system on one screen**, nothing
+    truncated, nothing hidden (`tasks` / `ps`).
+ 7. **Count every task ever killed by a hardware fault**, exactly (`killcount`).
+ 8. **Replay the exact faulting instruction of the last crash** (`lastfault`).
+ 9. **Deliberately crash a process on purpose and watch the OS survive**,
+    on demand, safely, from a shell command (`crashtest`).
+10. **Print its entire interrupt dispatch table** — all 256 vectors,
+    every single one, on one screen (`idt`).
+11. **Print its entire segmentation setup** — all 7 GDT entries plus the
+    TSS, completely (`gdt`).
+12. **Dump the literal, authoritative hardware memory map** handed to it
+    by the bootloader, unfiltered (`memmap`).
+13. **Read raw CPUID output directly**, no abstraction in between (`cpuid`).
+14. **Report its own exact binary size, section by section**, in bytes (`size`).
+15. **Know and report its own total line count**, computed at build time
+    (`sloc`) — currently a number small enough to read in an evening.
+16. **Measure the exact CPU-cycle cost of a context switch**, isolated
+    from everything else running (`switchbench`).
+17. **Measure the exact CPU-cycle cost of a syscall round trip** (`syscallbench`).
+18. **Freeze every single thing in the system, with proof**: disable
+    interrupts, show the one background counter that would normally be
+    climbing, and show it barely moved (`freeze`).
+19. **Read any byte of physical/virtual memory from the shell**, no
+    permission check, no ptrace ceremony (`peek`).
+20. **Write any byte of memory from the shell**, same deal (`poke`).
+21. **Hex-dump any memory range on demand** (`hexdump`).
+22. **Read any I/O port directly from an interactive prompt** (`inport`).
+23. **Write any I/O port directly from an interactive prompt** (`outport`).
+24. **Truthfully claim zero loadable modules, ever** — there is no
+    module system to have a hidden one in (`lsmod`).
+25. **Run entirely without swap, a page cache, or buffered I/O** to ever
+    misbehave — `meminfo` is exact, not a heuristic.
+26. **Run user-mode code that can be caught faulting on a privileged
+    instruction and isolated, without a working MMU-based process
+    model** — ring 3 works today even though page-table isolation
+    doesn't exist yet (see "what's next").
+27. **Reboot via a single direct hardware port write**, no shutdown
+    handshake, no service manager, no ACPI negotiation (`reboot`).
+28. **Give a one-line summary of the entire OS that is still true**
+    (`uname`) — there is no more of it hiding anywhere else.
+29. **Let you read the whole kernel's source in one sitting** and verify
+    every claim above yourself — it's all in this repository, in full.
+30. **Do all of the above inside a kernel that fits in ~40 KB on disk.**
+
+Try them: boot it (`make run`) and type `help`.
+
 ## Building and running
 
 Needs: `gcc`, `binutils` (`ld`/`as`), `grub-pc-bin`, `xorriso`, `mtools`,
@@ -109,3 +171,22 @@ callee-saved registers and `rsp`, return with a plain `ret`) fixed it
 outright. `iretq` is still used, just only for the paths real hardware
 already exercises constantly: the normal interrupt-return epilogue, and
 the one-way ring0→ring3 jump in `enter_usermode`.
+
+Two more from building the 30-features batch, kept here rather than
+quietly fixed and forgotten:
+
+- `kprintf`'s `%-Ns` (left-justify) support didn't exist at first. Using
+  it didn't just print the flag literally -- since the `-` wasn't
+  recognized, the parser fell through without consuming a `va_arg` for
+  the `%s`, desyncing every argument after it in that call. `gdt`,
+  `memmap`, and `tasks` all printed garbage from the wrong variables
+  until `%-` got real left-justify handling.
+- `crashtest`'s ring3 task was supposed to divide by zero and crash. It
+  didn't: `volatile int x = 1 / zero;` is division by a non-constant as
+  far as the type system goes, but GCC at `-O2` still recognized the
+  *dividend* was the constant `1` and open-coded the whole thing with a
+  branch (`cmova`) that returns `0` for divisors in `{-1, 0, 1}` instead
+  of ever executing `idiv` -- technically legal, since division by zero
+  is undefined behavior in C regardless of `volatile`. Fixed by doing
+  the division in inline asm, where the compiler has no opinions about
+  the C spec's undefined behavior to "optimize" with.

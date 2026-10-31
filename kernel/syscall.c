@@ -8,6 +8,8 @@ extern void enter_usermode(void (*entry)(void), uint64_t user_stack_top) __attri
 
 static void syscall_handler(registers_t *regs) {
     switch (regs->rax) {
+        case SYS_NOP:
+            break;
         case SYS_WRITE:
             kprintf("%s", (const char *)regs->rdi);
             break;

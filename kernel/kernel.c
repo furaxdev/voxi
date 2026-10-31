@@ -39,6 +39,7 @@ static void run_multitasking_demo(void) {
 
 void kernel_main(uint64_t multiboot_addr) {
     boottime_mark_start();
+    mb2_set_boot_addr(multiboot_addr);
 
     vga_init();
     serial_init();

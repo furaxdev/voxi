@@ -3,6 +3,7 @@
 
 #include <voxi/types.h>
 
+#define SYS_NOP   0
 #define SYS_WRITE 1
 #define SYS_EXIT  2
 

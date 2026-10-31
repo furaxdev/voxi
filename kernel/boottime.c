@@ -6,6 +6,7 @@
 static uint64_t tsc_start = 0;
 static uint64_t ms_elapsed = 0;
 static uint64_t cycles_elapsed = 0;
+static uint64_t measured_cycles_per_ms = 0;
 
 void boottime_mark_start(void) {
     tsc_start = tsc_read();
@@ -29,6 +30,7 @@ void boottime_report(void) {
     uint64_t cycles_per_ms = calib_ms ? calib_cycles / calib_ms : 1;
 
     ms_elapsed = cycles_per_ms ? cycles_elapsed / cycles_per_ms : 0;
+    measured_cycles_per_ms = cycles_per_ms;
 
     kprintf("\n");
     kprintf("================================================================\n");
@@ -43,3 +45,4 @@ void boottime_report(void) {
 
 uint64_t boottime_ms(void) { return ms_elapsed; }
 uint64_t boottime_cycles(void) { return cycles_elapsed; }
+uint64_t boottime_cycles_per_ms(void) { return measured_cycles_per_ms; }

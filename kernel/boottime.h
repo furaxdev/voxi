@@ -17,4 +17,9 @@ void boottime_report(void);
 uint64_t boottime_ms(void);
 uint64_t boottime_cycles(void);
 
+/* The CPU's measured clock speed, in TSC cycles per millisecond
+ * (divide by 1000 for cycles per microsecond, multiply by 1000 for
+ * cycles per second == Hz). Calibrated once, during boottime_report(). */
+uint64_t boottime_cycles_per_ms(void);
+
 #endif

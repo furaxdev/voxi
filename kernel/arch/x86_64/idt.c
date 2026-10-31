@@ -2,6 +2,7 @@
 #include <voxi/io.h>
 #include "../../lib/kprintf.h"
 #include "../../scheduler.h"
+#include "../../lastfault.h"
 #include "pic.h"
 
 struct idt_entry {
@@ -94,6 +95,7 @@ void isr_handler(registers_t *regs) {
     if (regs->cs == USER_CODE_SEL) {
         kprintf("\n[fault] user task crashed: exception #%d (%s), killing it\n",
                 (int)n, exception_name(n));
+        lastfault_record((int)n, regs->rip, regs->cs, scheduler_current()->id);
         scheduler_kill_current_and_switch();
         return; /* unreachable: scheduler_kill_current_and_switch never returns */
     }
@@ -132,4 +134,17 @@ void idt_init(void) {
     idt_set_gate(128, isr128, 3); /* syscall gate: DPL3 so ring3 can `int 0x80` */
 
     idt_load(&idtp);
+}
+
+void idt_dump(void) {
+    kprintf("vec  handler            dpl  kind\n");
+    for (int i = 0; i < 256; i++) {
+        uint64_t addr = (uint64_t)idt[i].offset_low
+                       | ((uint64_t)idt[i].offset_mid << 16)
+                       | ((uint64_t)idt[i].offset_high << 32);
+        if (addr == 0) continue;
+        uint8_t dpl = (idt[i].type_attr >> 5) & 3;
+        const char *kind = i < 32 ? "cpu exception" : (i < 48 ? "hardware irq" : "software");
+        kprintf("%3d  %p  %d    %s\n", i, (void *)addr, dpl, kind);
+    }
 }

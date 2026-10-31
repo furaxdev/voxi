@@ -9,7 +9,7 @@
 .set MB2_MAGIC, 0xe85250d6
 .set MB2_ARCH,  0
 
-.section .multiboot2
+.section .multiboot2, "a"
 .align 8
 multiboot_header:
     .long MB2_MAGIC

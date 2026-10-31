@@ -100,6 +100,20 @@ uint64_t scheduler_switch_count(void) {
     return switch_count;
 }
 
+bool scheduler_reap_child(int parent_id, int *exit_code_out) {
+    if (!current) return false;
+    task_t *t = current;
+    do {
+        if (t->parent_id == parent_id && t->state == TASK_DEAD && !t->reaped) {
+            t->reaped = true;
+            if (exit_code_out) *exit_code_out = t->exit_code;
+            return true;
+        }
+        t = t->next;
+    } while (t != current);
+    return false;
+}
+
 void scheduler_dump(void) {
     if (!current) {
         kprintf("scheduler not started\n");

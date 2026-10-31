@@ -44,6 +44,12 @@ uint64_t scheduler_kill_count(void);
 /* How many tasks have exited cleanly via SYS_EXIT so far. */
 uint64_t scheduler_exit_count(void);
 
+/* If some dead, not-yet-reaped task has parent_id == parent_id, reports
+ * its exit code via *exit_code_out, marks it reaped, and returns true.
+ * Otherwise returns false without blocking -- SYS_WAIT loops on this
+ * with a yield() between tries. */
+bool scheduler_reap_child(int parent_id, int *exit_code_out);
+
 /* How many context switches (yield-driven or timer-driven, all of
  * them) have happened so far. */
 uint64_t scheduler_switch_count(void);

@@ -14,6 +14,7 @@ LDFLAGS = -n -T $(BOOT_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 
 USERLAND_DIR = userland
 USER_ELF = $(BUILD_DIR)/userland/hello.elf
+USER_ELF2 = $(BUILD_DIR)/userland/forkdemo.elf
 
 C_SRCS := $(shell find $(KERNEL_DIR) -name '*.c')
 S_SRCS := $(BOOT_DIR)/boot.S $(KERNEL_DIR)/arch/x86_64/isr.S \
@@ -48,18 +49,31 @@ $(BUILD_DIR)/%.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# The ramfs's one embedded file: a tiny standalone ELF64 binary, built
-# with its own freestanding toolchain invocation (no kernel CFLAGS --
-# it's not part of the kernel image, just data baked into it).
+# The ramfs's embedded files: tiny standalone ELF64 binaries, built with
+# their own freestanding toolchain invocation (no kernel CFLAGS -- they
+# aren't part of the kernel image, just data baked into it).
+USER_CFLAGS = -std=gnu11 -ffreestanding -fno-builtin -fno-stack-protector \
+              -fno-pic -fno-pie -mno-red-zone -mno-sse -mno-sse2 -mno-mmx \
+              -mno-80387 -m64 -Wall -Wextra -O2
+
 $(BUILD_DIR)/userland/%.o: $(USERLAND_DIR)/%.S
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -ffreestanding -c $< -o $@
 
+$(BUILD_DIR)/userland/%.o: $(USERLAND_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
 $(USER_ELF): $(BUILD_DIR)/userland/hello.o $(USERLAND_DIR)/linker.ld
 	$(LD) -n -T $(USERLAND_DIR)/linker.ld -o $@ $(BUILD_DIR)/userland/hello.o
 
-# ramfs_data.S .incbin's the path above, so it must exist first.
-$(BUILD_DIR)/$(KERNEL_DIR)/fs/ramfs_data.o: $(USER_ELF)
+$(USER_ELF2): $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o \
+              $(BUILD_DIR)/userland/fork_demo.o $(USERLAND_DIR)/linker.ld
+	$(LD) -n -T $(USERLAND_DIR)/linker.ld -o $@ \
+	    $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o $(BUILD_DIR)/userland/fork_demo.o
+
+# ramfs_data.S .incbin's both paths above, so they must exist first.
+$(BUILD_DIR)/$(KERNEL_DIR)/fs/ramfs_data.o: $(USER_ELF) $(USER_ELF2)
 
 $(KERNEL_BIN): $(OBJS) $(BOOT_DIR)/linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)

@@ -64,3 +64,20 @@ void vmm_map_user_page(address_space_t *as, uint64_t vaddr, uint64_t phys, uint6
     uint64_t *pt = (uint64_t *)as->pt_phys;
     pt[index] = (phys & ~0xFFFull) | flags;
 }
+
+uint64_t vmm_get_user_page(address_space_t *as, uint64_t vaddr) {
+    uint64_t index = (vaddr - USER_BASE) / PAGE_SIZE;
+    uint64_t *pt = (uint64_t *)as->pt_phys;
+    uint64_t entry = pt[index];
+    return (entry & PAGE_PRESENT) ? (entry & ~0xFFFull) : 0;
+}
+
+void vmm_reset_user_window(address_space_t *as) {
+    uint64_t *pt = (uint64_t *)as->pt_phys;
+    for (int i = 0; i < 512; i++) {
+        if (pt[i] & PAGE_PRESENT) {
+            pmm_free_frame(pt[i] & ~0xFFFull);
+            pt[i] = 0;
+        }
+    }
+}

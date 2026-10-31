@@ -169,39 +169,96 @@ and `tasks` / `killcount` afterward to watch it show up, run, and exit
 cleanly through `SYS_EXIT` (separately counted from hardware-fault
 kills — `killcount` reports both now).
 
-### Can it run bash or zsh?
+## fork(), exec(), and wait() are real now: `run forkdemo`
+
+`forkdemo` (`userland/fork_demo.c` — the first actual *C* program on
+Voxi, compiled against nothing but seven raw syscalls, see
+`userland/syscalls.S` and `userland/crt0.S`) does exactly what its name
+says: it calls `fork()`, the child `exec()`s into `hello`, the parent
+`wait()`s for it, and both report the real exit code:
+
+```
+voxi> run forkdemo
+[fork_demo] pid 6
+[fork_demo] about to fork()...
+[kernel] fork(): task 6 -> child task 7 (own copied address space)
+[fork_demo] I am the parent. Waiting for my child to finish...
+[fork_demo] I am the child. Replacing myself with 'hello' via exec()...
+[kernel] exec(): task 7 now running 'hello'
+[hello] I am a separate ELF64 binary, loaded from ramfs,
+[hello] running in my own page tables with my own physical memory.
+[kernel] task 7 exited via syscall (code 0)
+[fork_demo] child exited cleanly. fork/exec/wait all work.
+[kernel] task 6 exited via syscall (code 0)
+```
+
+How each one actually works:
+
+- **`fork()`** (`kernel/syscall.c`, `SYS_FORK`): builds the child a
+  fresh address space, then walks the parent's page table copying every
+  present page into a freshly allocated physical frame at the same
+  virtual address — a real copy, not a shared one. The child's first
+  instruction is the *same* `int 0x80`'s return point as the parent's,
+  reached through a new `enter_usermode_child()` (`usermode.S`) that's
+  identical to the usual ring-3 entry except it zeroes `rax` first:
+  `iretq` never touches general-purpose registers, so without that,
+  the child would resume with whatever garbage was last in the
+  physical `rax` instead of the `0` that's the entire signal C code
+  uses to tell "I'm the child" from "I'm the parent, and this is my
+  child's pid" (which the parent gets normally, since the kernel just
+  writes it into `regs->rax` before an ordinary syscall return).
+- **`exec()`** (`SYS_EXEC`): frees every page in the caller's own
+  address space (`vmm_reset_user_window()`), loads a new ELF into the
+  same now-empty space, and rewrites the pending syscall-return
+  frame's `rip` (and, since crossing from kernel back to ring 3 always
+  carries a saved user `rsp`/`ss` even though `registers_t` doesn't
+  name them, see `registers_tail()` in `idt.h`) to point at the new
+  program's entry and a fresh stack. The *same* task keeps running —
+  it just isn't running the old program anymore, same as real `exec()`.
+- **`wait()`** (`SYS_WAIT`): loops `yield()`ing until
+  `scheduler_reap_child()` finds a dead, not-yet-reaped task whose
+  `parent_id` matches, then returns its exit code.
+
+Caught along the way: the exec() name string lives in the caller's own
+user memory, which `vmm_reset_user_window()` immediately frees — reading
+it *after* that reset (rather than copying it to a kernel buffer first)
+silently read whatever the new program's memory happened to contain
+instead, logging the wrong filename even though the load itself still
+worked by coincidence.
+
+## Can it run bash or zsh?
 
 No, and this is worth being direct about rather than letting the
 question hang: not the real binaries, and not even their source code
-without a project-sized amount of additional work. What's above is the
-*prerequisite architecture* — isolated address spaces, a real ELF
-loader, a process that's a separate file instead of a C function
-compiled into the kernel — not a shortcut past what bash/zsh actually
-need:
+without substantial further work. `fork()`/`exec()`/`wait()` above
+*were* genuinely a chunk of that "multi-week" estimate — turns out
+they fit in an afternoon once the address-space work from the previous
+section already existed to build on. What's still actually missing:
 
-- A real filesystem on real storage (there's a ramfs with one
-  hand-written demo file; there's no disk driver, no directory
-  structure, nothing resembling `/bin` or `/etc`).
-- A libc. Bash and zsh are written against glibc or a similar POSIX
-  libc — `malloc`, `printf`, `readline`, locale support, all of it.
-  Voxi has two real syscalls (`SYS_WRITE`, `SYS_EXIT`) plus a `SYS_NOP`
-  for benchmarking. Getting from there to "enough of POSIX that bash
-  compiles" is a libc port in its own right.
-- `fork()`/`execve()`/`wait()`, pipes, signals — bash's entire reason
-  for existing is managing other processes; Voxi can load and run
-  exactly one kind of thing, once, with no parent/child relationship
-  at all yet.
-- A tty layer with `termios`, job control, and the line discipline
-  readline expects. Voxi's "terminal" is a VGA text buffer and a
-  keyboard IRQ; there's no pty, no `SIGWINCH`, nothing a real shell's
-  interactive editing assumes exists.
+- **A real filesystem on real storage.** There's a ramfs with two
+  hand-written demo files; there's no disk driver, no directory
+  structure, nothing resembling `/bin` or `/etc`. This blocks loading
+  anything you didn't bake into the kernel image at compile time.
+- **A libc.** Bash and zsh are written against glibc or a similar
+  POSIX libc — `malloc`, `printf`, `readline`, locale support, all of
+  it. `userland/fork_demo.c` has none of that; it hand-rolls a 2-digit
+  integer-to-string conversion because there's no `itoa`, let alone
+  `printf`. Getting to "enough of POSIX that bash's own source
+  compiles" is a project in its own right.
+- **Pipes and signals.** `fork`/`exec`/`wait` are the process-control
+  third; shells also need `pipe()` for `|`, and signals for `Ctrl-C`,
+  job control, and `SIGCHLD`-driven reaping instead of a blocking
+  `wait()`.
+- **A tty layer** with `termios`, job control, and the line discipline
+  `readline` expects. Voxi's "terminal" is a VGA text buffer and a
+  keyboard IRQ (now with a blocking `SYS_READ` for user processes, see
+  below); there's no pty, no `SIGWINCH`, nothing a real shell's
+  interactive line editing assumes exists.
 
-Each of those is a multi-week-or-more project by itself. The honest
-path to "a real shell on Voxi" runs through all of them, roughly in
-that order, and probably ends with something much smaller than bash
-(a dash/ash-sized shell is a far more realistic target than bash or
-zsh specifically) ported against a custom libc built for Voxi's own
-syscalls — not the stock Linux binary, which would need Voxi to *be*
+The realistic path from here is still the same one, just shorter by
+one item: filesystem, then pipes/signals, then a libc port, landing on
+something dash/ash-sized rather than bash or zsh specifically — not
+the stock Linux binary, which would need Voxi to *be*
 Linux-ABI-compatible to run at all.
 
 ## Current limits / what's next
@@ -213,13 +270,12 @@ they'd unlock:
 1. **Filesystem**: a VFS layer, then something concrete (initrd, FAT, or a
    custom FS) — needs a disk driver (ATA/AHCI) first. The ramfs above is
    a stand-in, not a real filesystem.
-2. **fork()/execve()/wait()**: right now a process can be spawned from the
-   shell, but nothing can spawn one *from code running as another
-   process* — there's no parent/child relationship yet.
+2. **Pipes and signals**: the other two legs process control needs
+   besides fork/exec/wait, and the two things a shell can't do without.
 3. **A higher-half kernel + general-purpose `map_page`/`unmap_page`**: the
    current per-process window is one fixed-size, fixed-address 2MiB
-   region good enough for a demo binary, not a general allocator for
-   arbitrary processes with arbitrary memory needs.
+   region good enough for a demo binary (or two, fork-copied), not a
+   general allocator for arbitrary processes with arbitrary memory needs.
 4. **A libc port**: the real prerequisite for running anything written
    against POSIX expectations, bash/zsh included (see above).
 5. **More drivers**: proper framebuffer graphics, PCI enumeration, mouse.

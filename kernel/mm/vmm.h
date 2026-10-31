@@ -41,4 +41,14 @@ address_space_t *vmm_create_address_space(void);
  * USER_BASE+2MiB) in this address space. */
 void vmm_map_user_page(address_space_t *as, uint64_t vaddr, uint64_t phys, uint64_t flags);
 
+/* Returns the physical frame mapped at `vaddr` in this address space,
+ * or 0 if nothing is mapped there. Used by fork() to enumerate and
+ * copy a process's pages into a new address space. */
+uint64_t vmm_get_user_page(address_space_t *as, uint64_t vaddr);
+
+/* Frees every physical frame currently mapped in this address space's
+ * user window and clears the page table, leaving it empty and ready
+ * for exec() to load a fresh image into. */
+void vmm_reset_user_window(address_space_t *as);
+
 #endif

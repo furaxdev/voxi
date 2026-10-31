@@ -66,6 +66,7 @@ bool process_spawn(const char *name) {
         return false;
     }
     t->cr3 = as->pml4_phys;
+    t->as = as;
 
     kprintf("run: spawned '%s' as task #%d, entry=%p, own page tables (cr3=%p)\n",
             name, t->id, (void *)entry, (void *)t->cr3);

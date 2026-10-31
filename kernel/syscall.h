@@ -3,9 +3,14 @@
 
 #include <voxi/types.h>
 
-#define SYS_NOP   0
-#define SYS_WRITE 1
-#define SYS_EXIT  2
+#define SYS_NOP    0
+#define SYS_WRITE  1
+#define SYS_EXIT   2
+#define SYS_FORK   3  /* -> child pid in parent, 0 in child, -1 on failure */
+#define SYS_EXEC   4  /* rdi = ramfs filename; doesn't return on success */
+#define SYS_WAIT   5  /* blocks for any child, -> its exit code */
+#define SYS_GETPID 6
+#define SYS_READ   7  /* rdi = buf, rsi = maxlen; blocking line read from the keyboard */
 
 void syscall_init(void);
 

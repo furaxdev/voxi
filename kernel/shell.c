@@ -75,8 +75,8 @@ static void cmd_help(void) {
     kprintf("  outport PORT VAL   write one byte to an I/O port (hex, hex)\n");
     kprintf("  lsmod              list loaded modules (there are none, ever)\n");
     kprintf("  uname              one-line system summary\n");
-    kprintf("  t N | CMD          run CMD after N seconds\n");
-    kprintf("  t -h HH:MM:SS | CMD  run CMD at that time of day (RTC-based)\n");
+    kprintf("  t N | CMD          run CMD after N seconds, in the background\n");
+    kprintf("  t -h HH:MM:SS | CMD  same, at that time of day (RTC-based)\n");
     kprintf("  reboot             reboot the machine\n");
     kprintf("  halt               stop the CPU\n");
 }
@@ -132,13 +132,27 @@ static void cmd_uname(void) {
             VOXI_SLOC, (unsigned long)boottime_ms());
 }
 
+typedef struct {
+    uint64_t deadline_ticks;
+    char command[LINE_MAX];
+} t_job_t;
+
+static void t_task_entry(void *arg) {
+    t_job_t *job = (t_job_t *)arg;
+    while (pit_ticks() < job->deadline_ticks) yield();
+    kprintf("\n[t] running: %s\n", job->command);
+    execute_line(job->command);
+    kfree(job);
+}
+
 /* `t 5 | echo hi`        -- run `echo hi` 5 seconds from now
  * `t -h 14:56:00 | echo hi` -- run it at that time of day instead
  *
  * `args` is everything after "t " on the line, e.g. "5 | echo hi" or
- * "-h 14:56:00 | echo hi". Blocks the shell until the deadline (via
- * hlt, so the rest of the system keeps running preemptively), then
- * feeds the part after '|' back through the normal command dispatch. */
+ * "-h 14:56:00 | echo hi". Runs as a separate kernel task (see
+ * t_task_entry above), so the shell's own input loop is never blocked
+ * -- you get the prompt back immediately and can keep typing while it
+ * waits, same as every other task in this system. */
 static void cmd_t(char *args) {
     char *pipe_pos = strchr(args, '|');
     if (!pipe_pos) {
@@ -186,16 +200,17 @@ static void cmd_t(char *args) {
         kprintf("running in %lu s...\n", (unsigned long)seconds_to_wait);
     }
 
-    uint64_t target_ticks = pit_ticks() + seconds_to_wait * PIT_HZ;
-    while (pit_ticks() < target_ticks) {
-        __asm__ volatile ("sti; hlt");
+    t_job_t *job = kmalloc(sizeof(t_job_t));
+    if (!job) {
+        kprintf("out of memory, can't schedule that\n");
+        return;
     }
+    job->deadline_ticks = pit_ticks() + seconds_to_wait * PIT_HZ;
+    strncpy(job->command, command, LINE_MAX - 1);
+    job->command[LINE_MAX - 1] = '\0';
 
-    char cmdbuf[LINE_MAX];
-    strncpy(cmdbuf, command, LINE_MAX - 1);
-    cmdbuf[LINE_MAX - 1] = '\0';
-    kprintf("\n[t] running: %s\n", cmdbuf);
-    execute_line(cmdbuf);
+    scheduler_spawn(t_task_entry, job);
+    kprintf("[t] scheduled in the background -- the shell is free, keep typing.\n");
 }
 
 static void reboot(void) {

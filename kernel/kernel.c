@@ -13,6 +13,7 @@
 #include "scheduler.h"
 #include "syscall.h"
 #include "heartbeat.h"
+#include "boottime.h"
 #include "shell.h"
 
 extern uint8_t kernel_end[];
@@ -37,6 +38,8 @@ static void run_multitasking_demo(void) {
 }
 
 void kernel_main(uint64_t multiboot_addr) {
+    boottime_mark_start();
+
     vga_init();
     serial_init();
 
@@ -67,6 +70,8 @@ void kernel_main(uint64_t multiboot_addr) {
     scheduler_spawn(usermode_demo_entry, NULL);
     kprintf("[sched] spawning a background heartbeat task (no voluntary yield -- pure timer preemption)...\n");
     heartbeat_start();
+
+    boottime_report();
 
     shell_run();
 

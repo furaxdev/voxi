@@ -8,6 +8,7 @@
 #include "mm/pmm.h"
 #include "mm/heap.h"
 #include "heartbeat.h"
+#include "boottime.h"
 
 #define LINE_MAX 128
 
@@ -39,6 +40,7 @@ static void cmd_help(void) {
     kprintf("  meminfo   show physical memory and heap stats\n");
     kprintf("  uptime    show ticks since boot\n");
     kprintf("  about     show kernel info\n");
+    kprintf("  boottime  show the TSC-measured time to reach this shell\n");
     kprintf("  heartbeat show the background preemption counter (proves preemptive scheduling)\n");
     kprintf("  reboot    reboot the machine\n");
     kprintf("  halt      stop the CPU\n");
@@ -65,6 +67,14 @@ static void cmd_uptime(void) {
 static void cmd_about(void) {
     kprintf("Voxi -- a kernel built from scratch by Furax (FuraxDev)\n");
     kprintf("Architecture: x86_64, booted via Multiboot2/GRUB\n");
+    kprintf("Booted to this shell in %lu ms (%lu CPU cycles) -- try 'boottime'\n",
+            (unsigned long)boottime_ms(), (unsigned long)boottime_cycles());
+}
+
+static void cmd_boottime(void) {
+    kprintf("Time from kernel_main() to this shell: %lu ms (%lu CPU cycles, TSC-measured)\n",
+            (unsigned long)boottime_ms(), (unsigned long)boottime_cycles());
+    kprintf("A stock Linux boot doesn't even finish decompressing vmlinuz in that time.\n");
 }
 
 static void reboot(void) {
@@ -102,6 +112,8 @@ void shell_run(void) {
             cmd_uptime();
         } else if (strcmp(line, "about") == 0) {
             cmd_about();
+        } else if (strcmp(line, "boottime") == 0) {
+            cmd_boottime();
         } else if (strcmp(line, "heartbeat") == 0) {
             kprintf("heartbeat counter: %lu (climbing in the background while you type)\n",
                     (unsigned long)heartbeat_count());

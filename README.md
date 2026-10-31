@@ -4,6 +4,13 @@ A from-scratch x86_64 kernel, built by Furax (FuraxDev). Boots via GRUB2 /
 Multiboot2, switches to 64-bit long mode, and drops into an interactive
 shell — all written from the ground up with no borrowed kernel code.
 
+**It reaches that shell in single-digit milliseconds** (TSC-measured,
+calibrated against the PIT — run `boottime` once it's up to see the exact
+number on your machine). That's not a trick: it's what's left when there's
+no initrd to decompress, no hundreds of drivers to probe, no init system to
+start. Linux cannot do this — not because it's worse, but because it's
+solving a different, much bigger problem. Voxi only has to be Voxi.
+
 ## What's in it
 
 - **Boot** (`boot/boot.S`): Multiboot2 header, identity-maps the first 1 GiB

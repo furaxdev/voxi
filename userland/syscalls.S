@@ -24,3 +24,4 @@ SYSCALL sys_read, 7
 SYSCALL sys_pipe, 8
 SYSCALL sys_close, 9
 SYSCALL sys_kill, 10
+SYSCALL sys_sigignore, 11

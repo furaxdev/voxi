@@ -34,3 +34,10 @@ spin_elf_end:
 libctest_elf_start:
 .incbin "build/userland/libctest.elf"
 libctest_elf_end:
+
+.global sigdemo_elf_start
+.global sigdemo_elf_end
+.align 16
+sigdemo_elf_start:
+.incbin "build/userland/sigdemo.elf"
+sigdemo_elf_end:

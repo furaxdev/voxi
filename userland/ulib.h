@@ -21,6 +21,10 @@ extern long sys_read(int fd, char *buf, long maxlen);
 extern long sys_pipe(int *fds);
 extern long sys_close(int fd);
 extern long sys_kill(long pid, long sig);
+extern long sys_sigignore(long sig);
+
+#define SIGKILL 9
+#define SIGTERM 15
 
 static inline long ustrlen(const char *s) {
     long n = 0;

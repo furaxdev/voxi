@@ -83,7 +83,7 @@ static void cmd_help(void) {
     kprintf("  t -h HH:MM:SS | CMD  same, at that time of day (RTC-based)\n");
     kprintf("  ls                 list files in the ramfs\n");
     kprintf("  run NAME           load+run a ramfs ELF binary as a real isolated process\n");
-    kprintf("  kill PID           send SIGKILL to a task, delivered next time it's scheduled\n");
+    kprintf("  kill [-9] PID      send SIGTERM (default, ignorable) or SIGKILL (-9, never) to a task\n");
     kprintf("  diskls             list files on the real on-disk filesystem (SFS)\n");
     kprintf("  diskread NAME      print a file from disk\n");
     kprintf("  diskwrite NAME T.. create a file on disk with the rest of the line as its content\n");
@@ -347,13 +347,23 @@ static void execute_line(char *line) {
                 }
             }
         } else if (strcmp(cmd, "kill") == 0) {
-            char *pidstr = next_token(&cursor);
+            char *a = next_token(&cursor);
+            int sig = SIGTERM;
+            char *pidstr = a;
+            if (a && strcmp(a, "-9") == 0) {
+                sig = SIGKILL;
+                pidstr = next_token(&cursor);
+            } else if (a && strcmp(a, "-15") == 0) {
+                sig = SIGTERM;
+                pidstr = next_token(&cursor);
+            }
             if (!pidstr) {
-                kprintf("usage: kill PID\n");
+                kprintf("usage: kill [-9] PID   (default signal is SIGTERM, ignorable;\n");
+                kprintf("                        -9 is SIGKILL, never ignorable)\n");
             } else {
                 int pid = (int)parse_dec(pidstr);
-                if (scheduler_signal(pid, SIGKILL))
-                    kprintf("sent SIGKILL to task %d (takes effect next time it's scheduled)\n", pid);
+                if (scheduler_signal(pid, sig))
+                    kprintf("sent signal %d to task %d (takes effect next time it's scheduled)\n", sig, pid);
                 else
                     kprintf("no such task: %d\n", pid);
             }

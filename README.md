@@ -278,10 +278,34 @@ forever specifically to give `kill PID` something to aim at:
 voxi> run spin
 [spin] pid 8
 [spin] looping forever -- try 'kill <that pid>' from the shell
-voxi> kill 8
-sent SIGKILL to task 8 (takes effect next time it's scheduled)
+voxi> kill -9 8
+sent signal 9 to task 8 (takes effect next time it's scheduled)
 [kernel] task 8 killed by signal 9
 ```
+
+There's now real *disposition*, not just delivery: `SYS_SIGIGNORE(sig)`
+lets a task opt out of a signal, except `SIGKILL`, which (same as real
+POSIX) can never be ignored. The shell's `kill` defaults to `SIGTERM`
+now — ignorable — and only sends the unignorable `SIGKILL` with `-9`.
+`run sigdemo` (`userland/sig_demo.c`) ignores `SIGTERM` on purpose:
+
+```
+voxi> run sigdemo
+[sig_demo] pid=6, ignoring SIGTERM (try 'kill 6' -- nothing happens)
+[sig_demo] then try 'kill -9 6' -- SIGKILL always works
+voxi> kill 6
+sent signal 15 to task 6 (takes effect next time it's scheduled)
+[kernel] task 6 ignored signal 15 (SIG_IGN)
+[sig_demo] still alive, tick 4 (SIGTERM did nothing)
+voxi> kill -9 6
+sent signal 9 to task 6 (takes effect next time it's scheduled)
+[kernel] task 6 killed by signal 9
+```
+
+Still missing: actual handler *invocation* (a process running its own
+function in response to a signal, then resuming where it was) — that
+needs a signal-trampoline mechanism on top of this, not just a
+disposition bit.
 
 ## A real filesystem on a real disk: `diskls`, `diskwrite`, `diskread`
 
@@ -410,9 +434,11 @@ they'd unlock:
    has no subdirectories, no fragmentation support, no deletion-and-reuse
    of freed space, and a flat 16-file table. Fine for proving the
    driver and the concept; a real `/bin`, `/etc`, `/home` needs more.
-3. **Signal handling + job control**: delivery exists (`SYS_KILL`), but
-   only as "stop this task" -- no handler a process can install for its
-   own signals, no process groups, no foreground/background.
+3. **Signal handler invocation + job control**: delivery and
+   disposition exist now (`SYS_KILL`, `SYS_SIGIGNORE`), but a process
+   still can't install its *own* function to run when a signal
+   arrives -- that needs a signal-trampoline mechanism, not just a bit.
+   No process groups or foreground/background either.
 4. **A higher-half kernel + general-purpose `map_page`/`unmap_page`**: the
    current per-process window is one fixed-size, fixed-address 2MiB
    region good enough for a demo binary (or two, fork-copied), not a

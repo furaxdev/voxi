@@ -13,10 +13,11 @@
 #define SYS_READ   7  /* rdi = fd, rsi = buf, rdx = maxlen */
 #define SYS_PIPE   8  /* rdi = int[2] out: [0]=read fd, [1]=write fd */
 #define SYS_CLOSE  9  /* rdi = fd */
-#define SYS_KILL   10 /* rdi = pid, rsi = signal number */
+#define SYS_KILL      10 /* rdi = pid, rsi = signal number */
+#define SYS_SIGIGNORE 11 /* rdi = signal number to start ignoring (not SIGKILL) */
 
-#define SIGKILL 9  /* the only signal actually delivered right now */
-#define SIGTERM 15 /* accepted but currently handled exactly like SIGKILL */
+#define SIGKILL 9  /* can never be ignored -- always fatal, same as real POSIX */
+#define SIGTERM 15 /* fatal by default, but a task can SYS_SIGIGNORE it */
 
 #define FD_STDIN  0
 #define FD_STDOUT 1

@@ -18,6 +18,7 @@ USER_ELF2 = $(BUILD_DIR)/userland/forkdemo.elf
 USER_ELF3 = $(BUILD_DIR)/userland/pipedemo.elf
 USER_ELF4 = $(BUILD_DIR)/userland/spin.elf
 USER_ELF5 = $(BUILD_DIR)/userland/libctest.elf
+USER_ELF6 = $(BUILD_DIR)/userland/sigdemo.elf
 
 C_SRCS := $(shell find $(KERNEL_DIR) -name '*.c')
 S_SRCS := $(BOOT_DIR)/boot.S $(KERNEL_DIR)/arch/x86_64/isr.S \
@@ -93,8 +94,14 @@ $(USER_ELF5): $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o \
 	    $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o \
 	    $(BUILD_DIR)/userland/ulib.o $(BUILD_DIR)/userland/libc_test.o
 
+$(USER_ELF6): $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o \
+              $(BUILD_DIR)/userland/ulib.o $(BUILD_DIR)/userland/sig_demo.o $(USERLAND_DIR)/linker.ld
+	$(LD) -n -T $(USERLAND_DIR)/linker.ld -o $@ \
+	    $(BUILD_DIR)/userland/crt0.o $(BUILD_DIR)/userland/syscalls.o \
+	    $(BUILD_DIR)/userland/ulib.o $(BUILD_DIR)/userland/sig_demo.o
+
 # ramfs_data.S .incbin's all the paths above, so they must exist first.
-$(BUILD_DIR)/$(KERNEL_DIR)/fs/ramfs_data.o: $(USER_ELF) $(USER_ELF2) $(USER_ELF3) $(USER_ELF4) $(USER_ELF5)
+$(BUILD_DIR)/$(KERNEL_DIR)/fs/ramfs_data.o: $(USER_ELF) $(USER_ELF2) $(USER_ELF3) $(USER_ELF4) $(USER_ELF5) $(USER_ELF6)
 
 $(KERNEL_BIN): $(OBJS) $(BOOT_DIR)/linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)

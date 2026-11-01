@@ -41,6 +41,7 @@ task_t *task_create(void (*entry)(void *), void *arg, int id) {
     t->exit_code = 0;
     t->reaped = false;
     t->pending_signal = 0;
+    t->ignored_signals = 0;
     init_default_fds(t);
 
     /* Build an initial stack frame matching what switch_to() expects to
@@ -76,6 +77,7 @@ task_t *task_wrap_current(int id) {
     t->exit_code = 0;
     t->reaped = false;
     t->pending_signal = 0;
+    t->ignored_signals = 0;
     init_default_fds(t);
     return t;
 }

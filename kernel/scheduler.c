@@ -1,6 +1,7 @@
 #include "scheduler.h"
 #include "lib/kprintf.h"
 #include "arch/x86_64/gdt.h"
+#include "syscall.h" /* SIGKILL */
 
 extern void switch_to(uint64_t *old_rsp_store, uint64_t new_rsp);
 
@@ -67,7 +68,16 @@ void scheduler_switch(void) {
      * indefinitely) but every task here does end up back through the
      * scheduler eventually, via the timer if nothing else. */
     while (next->pending_signal != 0 && next->state != TASK_DEAD) {
-        kprintf("[kernel] task %d killed by signal %d\n", next->id, next->pending_signal);
+        int sig = next->pending_signal;
+
+        /* SIGKILL can never be ignored -- same rule real POSIX uses. */
+        if (sig != SIGKILL && (next->ignored_signals & (1u << sig))) {
+            kprintf("[kernel] task %d ignored signal %d (SIG_IGN)\n", next->id, sig);
+            next->pending_signal = 0;
+            break; /* resume this task normally */
+        }
+
+        kprintf("[kernel] task %d killed by signal %d\n", next->id, sig);
         next->state = TASK_DEAD;
         next->pending_signal = 0;
         kill_count++;

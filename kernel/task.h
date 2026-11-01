@@ -41,6 +41,9 @@ typedef struct task {
     bool reaped;            /* true once a SYS_WAIT has consumed exit_code */
     int pending_signal;     /* set by SYS_KILL; delivered next time the
                               * scheduler is about to resume this task */
+    uint32_t ignored_signals; /* bitmask set by SYS_SIGIGNORE; SIGKILL's
+                              * bit is never honored here, same as real
+                              * POSIX (SIGKILL can't be blocked/ignored) */
     fd_entry_t fds[FD_MAX]; /* fd 0/1/2 default to console in/out/out;
                               * SYS_PIPE and SYS_CLOSE manage the rest */
     task_state_t state;

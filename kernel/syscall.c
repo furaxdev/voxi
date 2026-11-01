@@ -195,6 +195,18 @@ static void syscall_handler(registers_t *regs) {
             break;
         }
 
+        case SYS_SIGIGNORE: {
+            int sig = (int)regs->rdi;
+            task_t *self = scheduler_current();
+            if (sig == SIGKILL || sig <= 0 || sig >= 32) {
+                regs->rax = (uint64_t)-1; /* SIGKILL can't be ignored, same as real POSIX */
+            } else {
+                self->ignored_signals |= (1u << sig);
+                regs->rax = 0;
+            }
+            break;
+        }
+
         case SYS_FORK: {
             task_t *parent = scheduler_current();
             address_space_t *parent_as = (address_space_t *)parent->as;

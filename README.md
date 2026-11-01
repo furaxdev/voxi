@@ -359,6 +359,36 @@ hey furax ca banger
 loads and runs an ELF binary read sector-by-sector off the disk, in
 its own address space, exactly like the ramfs-backed ones.
 
+## A real PCI bus scan: `lspci`
+
+Every driver so far (ATA, keyboard, serial, VGA) talks to hardware at
+a hardcoded, legacy-known I/O port. `lspci` (`kernel/drivers/pci.c`)
+is the first piece of code that *discovers* hardware instead of
+assuming it: it hits the legacy CONFIG_ADDRESS (port `0xCF8`) /
+CONFIG_DATA (port `0xCFC`) pair, brute-force walks every bus (0-255) /
+device (0-31) / function (0-7), and for anything that answers with a
+vendor ID other than `0xFFFF` (the "nothing here" value), decodes the
+vendor:device ID pair and the class/subclass byte out of config space:
+
+```
+voxi> lspci
+bus:dev.fn vendor:device  class  description
+000:00.0   8086:1237    06:00  host bridge
+000:01.0   8086:7000    06:01  ISA bridge
+000:01.1   8086:7010    01:01  mass storage controller
+000:01.3   8086:7113    06:80  other bridge
+000:02.0   1234:1111    03:00  display controller
+000:03.0   8086:100e    02:00  network controller
+6 PCI device(s) found (CONFIG_ADDRESS/CONFIG_DATA brute-force scan).
+```
+
+That's QEMU's actual virtual chipset, correctly identified: an i440FX
+host bridge, a PIIX3 ISA bridge + IDE controller + ACPI function
+(the real reason `diskls`/ATA work), a Cirrus VGA card, and an
+RTL8139 NIC. Voxi doesn't *drive* the NIC or the real VGA controller
+yet (that's still "what's next") — but it can now see every piece of
+hardware QEMU gives it, which is the prerequisite for ever doing so.
+
 ## The start of a real libc: `run libctest`
 
 Every userland program up to this point hand-rolled its own
@@ -443,9 +473,14 @@ they'd unlock:
    current per-process window is one fixed-size, fixed-address 2MiB
    region good enough for a demo binary (or two, fork-copied), not a
    general allocator for arbitrary processes with arbitrary memory needs.
-5. **More drivers**: proper framebuffer graphics, PCI enumeration, mouse,
+5. **More drivers**: PCI bus enumeration now works (`kernel/drivers/pci.c`,
+   `lspci` in the shell -- brute-force scans every bus/slot/function via
+   the CONFIG_ADDRESS/CONFIG_DATA ports, decodes vendor:device and
+   class/subclass). Still missing: proper framebuffer graphics, mouse,
    AHCI (the ATA PIO driver above works but is the simplest, slowest
-   way to talk to a disk).
+   way to talk to a disk), and actually driving any of the now-visible
+   PCI devices (the NIC, the real VGA controller) instead of just
+   listing them.
 6. **SMP**: everything here assumes one CPU core.
 
 The code is organized (`kernel/arch`, `kernel/drivers`, `kernel/mm`,

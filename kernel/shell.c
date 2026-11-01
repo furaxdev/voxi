@@ -21,6 +21,7 @@
 #include "fs/ramfs.h"
 #include "fs/sfs.h"
 #include "syscall.h"
+#include "drivers/pci.h"
 
 #define LINE_MAX 128
 
@@ -87,6 +88,7 @@ static void cmd_help(void) {
     kprintf("  diskls             list files on the real on-disk filesystem (SFS)\n");
     kprintf("  diskread NAME      print a file from disk\n");
     kprintf("  diskwrite NAME T.. create a file on disk with the rest of the line as its content\n");
+    kprintf("  lspci              enumerate real PCI devices (CONFIG_ADDRESS/CONFIG_DATA scan)\n");
     kprintf("  reboot             reboot the machine\n");
     kprintf("  halt               stop the CPU\n");
 }
@@ -323,6 +325,8 @@ static void execute_line(char *line) {
             if (name) process_spawn(name); else kprintf("usage: run NAME\n");
         } else if (strcmp(cmd, "diskls") == 0) {
             sfs_list();
+        } else if (strcmp(cmd, "lspci") == 0) {
+            pci_list();
         } else if (strcmp(cmd, "diskwrite") == 0) {
             char *name = next_token(&cursor);
             while (*cursor == ' ' || *cursor == '\t') cursor++;

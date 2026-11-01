@@ -37,4 +37,11 @@ bool sfs_find(const char *name, uint8_t **data_out, size_t *size_out);
  * is full) and writes `data` to disk for it, sector by sector. */
 bool sfs_write(const char *name, const uint8_t *data, size_t size);
 
+/* Removes a file's table entry, freeing up its slot (and its name) for
+ * reuse. The sectors it occupied are NOT reclaimed -- next_free_lba
+ * only ever advances, so deleted files leave a hole on disk. Real
+ * space reclamation needs a free-list, which isn't built yet (see
+ * README "what's next"). Returns false if the name doesn't exist. */
+bool sfs_delete(const char *name);
+
 #endif

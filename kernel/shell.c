@@ -88,6 +88,7 @@ static void cmd_help(void) {
     kprintf("  diskls             list files on the real on-disk filesystem (SFS)\n");
     kprintf("  diskread NAME      print a file from disk\n");
     kprintf("  diskwrite NAME T.. create a file on disk with the rest of the line as its content\n");
+    kprintf("  diskrm NAME        delete a file from the on-disk filesystem (slot/name reusable)\n");
     kprintf("  lspci              enumerate real PCI devices (CONFIG_ADDRESS/CONFIG_DATA scan)\n");
     kprintf("  reboot             reboot the machine\n");
     kprintf("  halt               stop the CPU\n");
@@ -350,6 +351,10 @@ static void execute_line(char *line) {
                     kprintf("no such file on disk: %s\n", name);
                 }
             }
+        } else if (strcmp(cmd, "diskrm") == 0) {
+            char *name = next_token(&cursor);
+            if (!name) kprintf("usage: diskrm NAME\n");
+            else sfs_delete(name);
         } else if (strcmp(cmd, "kill") == 0) {
             char *a = next_token(&cursor);
             int sig = SIGTERM;

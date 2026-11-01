@@ -359,6 +359,26 @@ hey furax ca banger
 loads and runs an ELF binary read sector-by-sector off the disk, in
 its own address space, exactly like the ramfs-backed ones.
 
+Files can be deleted too now (`diskrm NAME`), freeing up both the name
+and the table slot for reuse:
+
+```
+voxi> diskwrite testfile hello
+[sfs] wrote 'testfile': 5 bytes at lba 4
+voxi> diskrm testfile
+[sfs] deleted 'testfile' (its sectors are not reclaimed -- no free-list yet)
+voxi> diskwrite testfile goodbye
+[sfs] wrote 'testfile': 7 bytes at lba 5
+voxi> diskread testfile
+goodbye
+```
+
+Honest caveat, printed by the command itself: deleting a file clears
+its table entry but does not reclaim its sectors — `next_free_lba`
+only ever advances, so a deleted file leaves a hole on disk. Real
+space reclamation needs a free-list, which still doesn't exist (see
+"what's next").
+
 ## A real PCI bus scan: `lspci`
 
 Every driver so far (ATA, keyboard, serial, VGA) talks to hardware at
@@ -461,8 +481,11 @@ they'd unlock:
    the rest of what "running anything written against POSIX
    expectations" actually requires.
 2. **A real directory structure + a bigger/better on-disk format**: SFS
-   has no subdirectories, no fragmentation support, no deletion-and-reuse
-   of freed space, and a flat 16-file table. Fine for proving the
+   now supports deletion (`diskrm`, frees up the name and table slot),
+   but still has no subdirectories, no fragmentation support, and no
+   reclamation of a deleted file's sectors (no free-list -- deleted
+   space is just a permanent hole, `next_free_lba` never goes
+   backwards), plus still a flat 16-file table. Fine for proving the
    driver and the concept; a real `/bin`, `/etc`, `/home` needs more.
 3. **Signal handler invocation + job control**: delivery and
    disposition exist now (`SYS_KILL`, `SYS_SIGIGNORE`), but a process

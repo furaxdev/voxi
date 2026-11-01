@@ -161,3 +161,20 @@ bool sfs_write(const char *name, const uint8_t *data, size_t size) {
     kprintf("[sfs] wrote '%s': %lu bytes at lba %lu\n", name, (unsigned long)size, (unsigned long)start);
     return true;
 }
+
+bool sfs_delete(const char *name) {
+    sfs_entry_t *e = find_entry(name);
+    if (!e) {
+        kprintf("[sfs] '%s' not found\n", name);
+        return false;
+    }
+
+    memset(e, 0, sizeof(*e));
+    super.file_count--;
+
+    save_table();
+    save_super();
+
+    kprintf("[sfs] deleted '%s' (its sectors are not reclaimed -- no free-list yet)\n", name);
+    return true;
+}

@@ -6,6 +6,7 @@ extern const uint8_t hello_elf_start[], hello_elf_end[];
 extern const uint8_t forkdemo_elf_start[], forkdemo_elf_end[];
 extern const uint8_t pipedemo_elf_start[], pipedemo_elf_end[];
 extern const uint8_t spin_elf_start[], spin_elf_end[];
+extern const uint8_t libctest_elf_start[], libctest_elf_end[];
 
 typedef struct {
     const char *name;
@@ -19,6 +20,7 @@ static const ramfs_entry_t entries[] = {
     { "forkdemo", forkdemo_elf_start, forkdemo_elf_end, "userland/fork_demo.c -- fork()+exec()+wait()" },
     { "pipedemo", pipedemo_elf_start, pipedemo_elf_end, "userland/pipe_demo.c -- pipe()+fork(), real IPC" },
     { "spin",     spin_elf_start,     spin_elf_end,     "userland/spin.c -- loops forever; try 'kill'" },
+    { "libctest", libctest_elf_start, libctest_elf_end, "userland/libc_test.c -- umalloc()+uprintf()" },
 };
 #define RAMFS_COUNT (sizeof(entries) / sizeof(entries[0]))
 
@@ -38,6 +40,6 @@ void ramfs_list(void) {
         kprintf("%-10s %5lu bytes  %s\n", entries[i].name,
                 (unsigned long)(entries[i].end - entries[i].start), entries[i].blurb);
     }
-    kprintf("all baked into the kernel image at build time -- no real disk yet.\n");
-    kprintf("run any of them with 'run NAME'.\n");
+    kprintf("all baked into the kernel image at build time (see 'diskls' for the\n");
+    kprintf("real on-disk filesystem instead). run any of them with 'run NAME'.\n");
 }

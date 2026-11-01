@@ -32,4 +32,20 @@ static inline void uputs(int fd, const char *s) {
     sys_write(fd, s, ustrlen(s));
 }
 
+/* The start of an actual libc (ulib.c): a bump+freelist malloc over a
+ * static arena baked into every program's own .bss (no syscall needed
+ * -- BSS is just zeroed pages the ELF loader already hands out), a
+ * minimal printf (%d %u %x %c %s %%, no width/precision), and the
+ * string.h basics. Still not a real libc -- no stdio buffering, no
+ * locale, no float formatting -- but real enough that programs stop
+ * hand-rolling integer-to-string conversions. */
+void *umalloc(long size);
+void ufree(void *ptr);
+void uprintf(const char *fmt, ...);
+
+int ustrcmp(const char *a, const char *b);
+char *ustrcpy(char *dst, const char *src);
+void *umemcpy(void *dst, const void *src, long n);
+void *umemset(void *dst, int val, long n);
+
 #endif

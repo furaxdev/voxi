@@ -27,3 +27,10 @@ pipedemo_elf_end:
 spin_elf_start:
 .incbin "build/userland/spin.elf"
 spin_elf_end:
+
+.global libctest_elf_start
+.global libctest_elf_end
+.align 16
+libctest_elf_start:
+.incbin "build/userland/libctest.elf"
+libctest_elf_end:

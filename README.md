@@ -335,27 +335,49 @@ hey furax ca banger
 loads and runs an ELF binary read sector-by-sector off the disk, in
 its own address space, exactly like the ramfs-backed ones.
 
+## The start of a real libc: `run libctest`
+
+Every userland program up to this point hand-rolled its own
+integer-to-string conversion because there was no `itoa`, let alone
+`printf`. `userland/ulib.c` now has an actual `malloc`/`free` (a
+bump+freelist allocator over a 32KiB static arena baked into every
+program's own `.bss` — no syscall needed, since BSS is just zeroed
+pages the ELF loader already hands out) and an actual `printf` (`%d
+%u %x %X %c %s %%`, no width/precision, no floats):
+
+```
+voxi> run libctest
+[libc_test] pid=6, testing umalloc/uprintf...
+[libc_test] heap string: "allocated via umalloc()" (len=23)
+[libc_test] second alloc at offset 0 bytes into the arena
+[libc_test] 255 in hex is ff, -1 in hex is ffffffff
+[libc_test] all good: malloc, free, and printf's %d/%x/%s all work.
+```
+
+("second alloc at offset 0" is `ufree()` actually working: the first
+buffer was freed before the second was allocated, so the allocator
+handed back the same freed block instead of carving out new space.)
+
+Still nowhere near a real libc — no `stdio` buffering, no locale, no
+dynamic linking — but it's the difference between "every program
+reimplements string formatting" and "programs call `uprintf()`."
+
 ## Can it run bash or zsh?
 
 No, and this is worth being direct about rather than letting the
 question hang: not the real binaries, and not even their source code
-without substantial further work. Every item in the last three
-sections *was* genuinely part of the "multi-week" estimate from
-earlier versions of this section — turns out each one fits in an
-afternoon once the address-space and scheduler work underneath it
-already exists to build on. What's still actually missing:
+without substantial further work. Every item in the sections above
+*was* genuinely part of the "multi-week" estimate from earlier
+versions of this section — turns out each one fits in a session once
+the address-space and scheduler work underneath it already exists to
+build on. What's still actually missing:
 
-- **A real filesystem on real storage.** There's a ramfs with four
-  hand-written demo files; there's no disk driver, no directory
-  structure, nothing resembling `/bin` or `/etc`. This blocks loading
-  anything you didn't bake into the kernel image at compile time.
-- **A libc.** Bash and zsh are written against glibc or a similar
-  POSIX libc — `malloc`, `printf`, `readline`, locale support, all of
-  it. `userland/ulib.h` has none of that; it hand-rolls a 2-digit
-  integer-to-string conversion because there's no `itoa`, let alone
-  `printf`. Getting to "enough of POSIX that bash's own source
-  compiles" is a project in its own right.
-- **Job control and `SIGCHLD`.** Signal delivery exists now, but only
+- **A real libc.** `userland/ulib.c` now has a real `malloc`/`free`
+  (bump+freelist over a static arena) and a real `printf` (`%d %u %x
+  %c %s %%` — no width/precision, no floats). That's still a tiny
+  fraction of glibc: no `readline`, no locale support, no dynamic
+  linking, nothing close to "bash's own source compiles against this."
+- **Job control and `SIGCHLD`.** Signal delivery exists, but only
   `SIGKILL`-style "stop this task"; there's no signal *handling* (a
   process catching its own signal and running a handler), no process
   groups, no foreground/background, nothing `Ctrl-C`/`Ctrl-Z` or a
@@ -365,11 +387,14 @@ already exists to build on. What's still actually missing:
   (with a blocking `SYS_READ` for user processes); there's no pty, no
   `SIGWINCH`, nothing a real shell's interactive line editing assumes
   exists.
+- **A real directory structure.** SFS (the on-disk filesystem above)
+  has a flat 16-file table, no subdirectories — no `/bin`, no `/etc`.
 
-The realistic path from here: filesystem, then a libc port, then
-job control/signal handling, landing on something dash/ash-sized
-rather than bash or zsh specifically — not the stock Linux binary,
-which would need Voxi to *be* Linux-ABI-compatible to run at all.
+The realistic path from here: grow the libc further, then job
+control/signal handling, then a real directory structure, landing on
+something dash/ash-sized rather than bash or zsh specifically — not
+the stock Linux binary, which would need Voxi to *be*
+Linux-ABI-compatible to run at all.
 
 ## Current limits / what's next
 
@@ -377,8 +402,10 @@ This is a real, booting kernel, not a toy stub — but it's still early-stage
 next to Linux or Windows. Honest next steps, roughly in order of how much
 they'd unlock:
 
-1. **A libc port**: the real prerequisite for running anything written
-   against POSIX expectations, bash/zsh included (see above).
+1. **Grow the libc**: `ulib.c` has `malloc`/`free`/`printf` now (see
+   above); still missing buffered `stdio`, locale, dynamic linking --
+   the rest of what "running anything written against POSIX
+   expectations" actually requires.
 2. **A real directory structure + a bigger/better on-disk format**: SFS
    has no subdirectories, no fragmentation support, no deletion-and-reuse
    of freed space, and a flat 16-file table. Fine for proving the
